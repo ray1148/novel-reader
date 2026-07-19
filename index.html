@@ -1912,6 +1912,7 @@ function saveFbConfig(){
     // Store as clean JSON
     localStorage.setItem('nr3_fbconfig', JSON.stringify(cfg));
     document.getElementById('fbConfigText').value = JSON.stringify(cfg, null, 2);
+    console.log('saveFbConfig: projectId=', cfg.projectId, 'apiKey=', cfg.apiKey.slice(0,8));
     setFbStatus('設定已儲存，載入 Firebase...');
     loadFirebaseSDK(cfg);
   } catch(e){
@@ -2027,6 +2028,7 @@ function initFirebaseApp(cfg){
   try {
     fsProjectId = cfg.projectId;
     fsApiKey    = cfg.apiKey;
+    console.log('initFirebaseApp: fsProjectId=', fsProjectId, 'fsApiKey=', fsApiKey ? fsApiKey.slice(0,8)+'...' : 'empty');
     if(!fsProjectId || !fsApiKey){
       setFbStatus('設定缺少 projectId 或 apiKey', true);
       return;
@@ -2053,7 +2055,8 @@ function snapExists(snap){ return snap !== null; }
 function fsServerTimestamp(){ return new Date().toISOString(); }
 
 function fbLogin(){
-  if(!fsProjectId){ setFbStatus('請先儲存 Firebase 設定', true); return; }
+  console.log('fbLogin called, fsProjectId=', fsProjectId, 'fbUser=', fbUser);
+  if(!fsProjectId){ setFbStatus('請先儲存 Firebase 設定 (fsProjectId是空的)', true); return; }
   const pw = document.getElementById('fbPassword').value.trim();
   if(!pw){ setFbStatus('請輸入密碼', true); return; }
   setFbStatus('連線中...');
