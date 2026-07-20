@@ -2126,7 +2126,6 @@ async function deleteCol(colPath){
 async function fbBackup(){
   if(!fbUser || !fsProjectId){ showToast('請先輸入密碼連線'); return; }
   const uid = fbUser.uid;
-  const base = fsDoc('users', uid);
   const totalChaps = novels.reduce((s,n)=>s+n.chapters.length,0);
   let done = 0;
 
@@ -2162,10 +2161,8 @@ async function fbBackup(){
     // 3. Write each novel + chapters separately
     for(let ni=0; ni<novels.length; ni++){
       const n = novels[ni];
-      const nRef = fsDoc('users', uid, 'novels', 'n'+ni);
-
       // Novel info (no chapters content)
-      await fsSet(nRef, {
+      await fsRestSet(`users/${uid}/novels/n${ni}`, {
         idx: ni,
         name:      n.name      || '',
         author:    n.author    || '',
