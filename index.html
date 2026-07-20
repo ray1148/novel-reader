@@ -557,11 +557,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         使用 <strong>Google Firebase Firestore</strong>（免費方案完全夠用）同步資料，換手機也可以繼續閱讀。
       </div>
       <div class="msection">
-        <button class="btn-g btn-sm" id="btnToggleFbConfig" onclick="toggleFbConfig()" style="display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left">
-          <span>&#9881; Firebase 設定（JSON）</span>
-          <span id="fbConfigArrow">&#9656;</span>
-        </button>
-        <div id="fbConfigBody" style="display:none;flex-direction:column;gap:8px;margin-top:8px">
+        <label style="font-size:13px;color:var(--ink-2);font-weight:500">Firebase 設定（JSON）</label>
+        <div id="fbConfigBody" style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
           <textarea class="panel-ta" id="fbConfigText" style="height:100px;font-family:monospace;font-size:11px" placeholder='{"apiKey":"...","projectId":"..."}'></textarea>
           <button class="btn-p btn-sm" id="btnSaveFbConfig" onclick="saveFbConfig()">儲存設定</button>
         </div>
