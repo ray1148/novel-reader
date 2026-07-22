@@ -1988,12 +1988,22 @@ function toFsFields(obj){
 
 // REST: GET document
 async function fsRestGet(path){
+  if(!fsApiKey || !fsProjectId){
+    throw new Error('請先儲存 Firebase 設定並輸入密碼連線');
+  }
   const url=`${fsRestBase()}/${path}?key=${fsApiKey}`;
-  console.log('fsRestGet:', url);
+  console.log('fsRestGet URL:', url.slice(0,80)+'...');
   const r=await fetch(url);
   console.log('fsRestGet status:', r.status, path);
-  if(r.status===404) return null; // not found
-  if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.statusText);}
+  if(r.status===404) return null;
+  if(r.status===403){
+    const e=await r.json().catch(()=>({}));
+    throw new Error('Firestore 權限不足：' + (e.error?.message||'請確認安全規則'));
+  }
+  if(!r.ok){
+    const e=await r.json().catch(()=>({}));
+    throw new Error((e.error?.message)||r.statusText);
+  }
   return r.json();
 }
 
@@ -2249,6 +2259,7 @@ async function _doRestore(){
     const uid = fbUser.uid;
     msg.textContent = '讀取主資料...';
     bar.style.width = '5%';
+    console.log('Restore: uid=', uid.slice(0,8), 'projectId=', fsProjectId, 'apiKey=', fsApiKey?fsApiKey.slice(0,8):'EMPTY');
 
     // 1. Read meta via REST
     const metaDoc = await fsRestGet(`users/${uid}`);
