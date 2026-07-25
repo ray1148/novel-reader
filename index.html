@@ -77,12 +77,24 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .novel-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--paper-2);flex-shrink:0;position:fixed;top:52px;left:0;right:0;z-index:80;transition:transform .28s ease,opacity .28s ease;box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .novel-header.ui-hidden{transform:translateY(calc(-100% - 56px));opacity:0;pointer-events:none}
 /* Bottom bar: TOC + prev/next */
-.reading-bottom-bar{position:fixed;bottom:0;left:0;right:0;z-index:80;background:var(--paper-2);border-top:1px solid var(--paper-3);padding:10px 16px 18px;display:flex;align-items:center;justify-content:space-between;gap:8px;transition:transform .28s ease,opacity .28s ease;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+.reading-bottom-bar{position:fixed;bottom:0;left:0;right:0;z-index:80;background:rgba(20,18,14,.92);backdrop-filter:blur(8px);padding:0;display:flex;flex-direction:column;transition:transform .28s ease,opacity .28s ease}
 .reading-bottom-bar.ui-hidden{transform:translateY(110%);opacity:0;pointer-events:none}
-.rb-btn{background:var(--paper-3);border:none;border-radius:var(--radius);padding:8px 14px;font-size:13px;cursor:pointer;color:var(--ink-2);display:flex;align-items:center;gap:5px;white-space:nowrap}
-.rb-btn:hover{background:var(--paper-3);color:var(--gold)}
-.rb-btn.disabled{opacity:.3;pointer-events:none}
-.rb-chap-title{font-size:12px;color:var(--ink-3);flex:1;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* Progress row */
+.rb-progress-row{display:flex;align-items:center;gap:10px;padding:10px 16px 4px;color:rgba(255,255,255,.7);font-size:12px}
+.rb-prog-label{min-width:60px;text-align:center}
+.rb-prog-pct{min-width:40px;text-align:right}
+.rb-slider{flex:1;-webkit-appearance:none;height:3px;border-radius:2px;background:rgba(255,255,255,.25);outline:none;cursor:pointer}
+.rb-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:white;cursor:pointer}
+.rb-nav-row{display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px}
+.rb-nav-btn{background:none;border:none;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;padding:6px 12px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.rb-nav-btn span{font-size:10px;opacity:.6;max-width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.rb-nav-btn.disabled{opacity:.3;pointer-events:none}
+.rb-nav-btn:hover{color:white}
+/* Icon buttons row */
+.rb-icon-row{display:flex;align-items:center;justify-content:space-around;padding:8px 16px 14px;border-top:1px solid rgba(255,255,255,.1)}
+.rb-icon-btn{background:none;border:none;color:rgba(255,255,255,.7);font-size:22px;cursor:pointer;padding:4px 12px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.rb-icon-btn span{font-size:10px;color:rgba(255,255,255,.5)}
+.rb-icon-btn:hover{color:white}
 .back-btn{background:none;border:none;font-size:18px;cursor:pointer;color:var(--ink-2);padding:4px 8px;border-radius:var(--radius)}
 .back-btn:hover{background:var(--paper-3)}
 .novel-title-bar{flex:1;font-size:14px;font-weight:500}
@@ -312,7 +324,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 <div class="view" id="viewDetail">
   <div class="detail-page">
     <div class="detail-header">
-      <button class="back-btn" id="btnNovelBack" onclick="goNovelBack()">&#8592;</button>
+      <button class="back-btn" onclick="goShelf()">&#8592;</button>
       <span id="detailTitle" style="font-size:15px;font-weight:600;flex:1"></span>
     </div>
     <div class="detail-cover-wrap">
@@ -1826,7 +1838,11 @@ function initEditSwatches(){
 function confirmAddNovel(){
   const name=document.getElementById("addName").value.trim();if(!name){alert("請輸入小說名稱");return;}
   novels.push({name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null});
-  persist();closeModal("addModal");renderShelf();showToast("📚 「"+name+"」已新增！");
+  persist();closeModal("addModal");renderShelf();
+  showToast("📚 「"+name+"」已新增！");
+  // Go to detail page so user can add chapters
+  const newIdx = novels.length - 1;
+  showDetail(newIdx);
 }
 
 // Chapter modal
