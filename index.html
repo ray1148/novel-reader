@@ -109,7 +109,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 /* Reader */
 .reader-wrap{flex:1;display:flex;overflow:hidden;transition:margin-right .25s;min-width:0}
 .reader-wrap.panel-open{margin-right:var(--panel-w)}
-.pane{flex:1;overflow-y:auto;padding:16px 32px 80px;min-width:0;padding-top:calc(52px + 16px)}
+.pane{flex:1;overflow-y:auto;padding:16px 32px 80px;min-width:0;padding-top:16px}
+.pane-content{font-size:17px;line-height:2.1;white-space:pre-wrap;word-break:break-word;font-family:var(--font-body);max-width:680px;margin:0 auto}
 .pane+.pane{border-left:1px solid var(--paper-3)}
 .pane-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
 .lang-badge{background:var(--paper-3);padding:2px 8px;border-radius:4px;font-size:11px}
@@ -165,6 +166,26 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .bk-del{color:var(--ink-3);font-size:11px;cursor:pointer}
 .bk-del:hover{color:var(--red)}
 .bk-empty{font-size:12px;color:var(--ink-3);text-align:center;padding:10px}
+/* Novel detail page */
+.detail-page{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:0}
+.detail-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--paper-3);background:var(--paper-2);flex-shrink:0}
+.detail-cover-wrap{display:flex;gap:20px;padding:24px 20px;background:var(--paper-2);border-bottom:1px solid var(--paper-3)}
+.detail-cover{width:90px;height:135px;border-radius:8px;overflow:hidden;flex-shrink:0;box-shadow:3px 4px 12px rgba(0,0,0,.2)}
+.detail-info{flex:1;display:flex;flex-direction:column;gap:6px;justify-content:center}
+.detail-novel-title{font-size:18px;font-weight:700;color:var(--ink);line-height:1.3}
+.detail-author{font-size:13px;color:var(--ink-3)}
+.detail-stats{font-size:12px;color:var(--ink-3);line-height:1.8}
+.detail-continue-btn{margin:16px;padding:14px;background:var(--gold);color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;text-align:center;display:block;width:calc(100% - 32px)}
+.detail-continue-btn:hover{background:#9a720a}
+.detail-section-title{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;font-size:13px;font-weight:600;color:var(--ink-2);border-bottom:1px solid var(--paper-3);background:var(--paper-2)}
+.detail-chap-list{display:flex;flex-direction:column}
+.detail-chap-item{display:flex;align-items:center;padding:13px 16px;border-bottom:1px solid var(--paper-3);cursor:pointer;gap:12px;transition:background .12s}
+.detail-chap-item:hover{background:var(--paper-2)}
+.detail-chap-item.active-chap{border-left:3px solid var(--gold);padding-left:13px;background:var(--gold-bg)}
+.detail-chap-num{font-size:11px;color:var(--ink-3);min-width:28px}
+.detail-chap-title{font-size:14px;color:var(--ink);flex:1}
+.detail-chap-actions{display:flex;gap:6px;opacity:0;transition:opacity .15s}
+.detail-chap-item:hover .detail-chap-actions{opacity:1}
 
 .bk-add-btn{display:flex;align-items:center;gap:6px;background:none;border:1px dashed var(--paper-3);border-radius:var(--radius);padding:7px 14px;font-size:12px;color:var(--ink-3);cursor:pointer;justify-content:center;width:100%}
 .bk-add-btn:hover{border-color:var(--gold);color:var(--gold)}
@@ -284,6 +305,43 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <p>點擊右上角「＋ 新增小說」開始建立你的書庫</p>
     </div>
     <div class="shelf-grid" id="shelfGrid" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ══ NOVEL DETAIL VIEW ══ -->
+<div class="view" id="viewDetail">
+  <div class="detail-page">
+    <div class="detail-header">
+      <button class="back-btn" id="btnNovelBack" onclick="goNovelBack()">&#8592;</button>
+      <span id="detailTitle" style="font-size:15px;font-weight:600;flex:1"></span>
+    </div>
+    <div class="detail-cover-wrap">
+      <div class="detail-cover" id="detailCover">
+        <img id="detailCoverImg" style="width:100%;height:100%;object-fit:cover;display:none">
+      </div>
+      <div class="detail-info">
+        <div class="detail-novel-title" id="detailNovelTitle"></div>
+        <div class="detail-author" id="detailAuthor"></div>
+        <div class="detail-stats" id="detailStats"></div>
+      </div>
+    </div>
+    <!-- Continue reading button -->
+    <button class="detail-continue-btn" id="btnContinueRead" onclick="continueReading()">
+      &#9654; 繼續閱讀
+      <span id="continueChapTitle" style="font-size:12px;opacity:.8;display:block;margin-top:2px"></span>
+    </button>
+    <!-- Chapter list -->
+    <div class="detail-section-title">
+      <span>章節目錄</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn-g btn-sm" onclick="openChapterModal(activeNovel)">&#65291; 新增</button>
+        <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
+          <input type="file" accept=".txt" multiple id="detailBatchFiles" style="display:none">
+          &#128196; 批次
+        </label>
+      </div>
+    </div>
+    <div class="detail-chap-list" id="detailChapList"></div>
   </div>
 </div>
 
@@ -872,12 +930,35 @@ async function callAI(systemPrompt, userMessages, maxTokens=1000){
 }
 
 // ══ Views ══
-function showView(id){["viewShelf","viewNovel","viewSettings"].forEach(v=>{document.getElementById(v).classList.toggle("active",v===id);});document.getElementById("btnToc").style.display=id==="viewNovel"?"flex":"none";document.getElementById("btnSplit").style.display=id==="viewNovel"?"flex":"none";document.getElementById("btnAI").style.display=id==="viewNovel"?"flex":"none";document.getElementById("pgFill").style.width="0";document.getElementById("pgTip").textContent="";}
+function showView(id){
+  ["viewShelf","viewDetail","viewNovel","viewSettings"].forEach(v=>{
+    document.getElementById(v).classList.toggle("active",v===id);
+  });
+  const inNovel = id==="viewNovel";
+  // Hide global header and pgbar when reading (they re-appear as overlay on tap)
+  document.querySelector("header").style.display = inNovel ? "none" : "flex";
+  document.querySelector(".pgbar-wrap").style.display = inNovel ? "none" : "block";
+  document.getElementById("btnToc").style.display = inNovel?"flex":"none";
+  document.getElementById("btnSplit").style.display = inNovel?"flex":"none";
+  document.getElementById("btnAI").style.display = inNovel?"flex":"none";
+  document.getElementById("pgFill").style.width="0";
+  document.getElementById("pgTip").textContent="";
+}
 function goShelf(){
   hideReadingUI();
-  showView("viewShelf");renderShelf();panelOpen=false;
+  showView("viewShelf");
+  renderShelf();
+  panelOpen=false;
   document.getElementById("aiPanel").classList.remove("open");
   document.getElementById("readerWrap").classList.remove("panel-open");
+}
+function goNovelBack(){
+  hideReadingUI();
+  panelOpen=false;
+  document.getElementById("aiPanel").classList.remove("open");
+  document.getElementById("readerWrap").classList.remove("panel-open");
+  if(activeNovel>=0) showDetail(activeNovel);
+  else goShelf();
 }
 function goSettings(){showView("viewSettings");updateStorageInfo();}
 
@@ -955,21 +1036,92 @@ function renderShelf(){
 
 // ══ Novel ══
 function openNovel(idx){
-  activeNovel=idx;activeChapter=0;
+  activeNovel=idx;
   const n=novels[idx];
+  showDetail(idx);
+  // Build RAG index in background
+  setTimeout(()=>{ const c=buildRagIndex(idx); console.log('RAG:',c,'chunks'); }, 500);
+}
+
+function showDetail(idx){
+  activeNovel=idx;
+  const n=novels[idx];
+  showView("viewDetail");
+  document.getElementById("detailTitle").textContent=n.name;
+  document.getElementById("detailNovelTitle").textContent=n.name;
+  document.getElementById("detailAuthor").textContent=n.author||"";
+  // Cover
+  const cover=document.getElementById("detailCover");
+  const coverImg=document.getElementById("detailCoverImg");
+  cover.style.background=n.coverImg?"#111":(n.color||"#4a3728");
+  if(n.coverImg){ coverImg.src=n.coverImg; coverImg.style.display="block"; }
+  else { coverImg.style.display="none"; }
+  // Stats
+  const totalChaps=n.chapters.length;
+  const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
+  const pct=Math.round((n.scrollPct||0)*100);
+  document.getElementById("detailStats").innerHTML=
+    `${totalChaps} 章節 &nbsp;·&nbsp; ${(totalChars/10000).toFixed(1)} 萬字 &nbsp;·&nbsp; 已讀 ${pct}%`;
+  // Continue reading button
+  const resumeChap=(n.lastChapter!=null&&n.lastChapter<n.chapters.length)?n.lastChapter:0;
+  const chapTitle=n.chapters[resumeChap]?.title||`第${resumeChap+1}章`;
+  document.getElementById("continueChapTitle").textContent=chapTitle;
+  // Chapter list
+  renderDetailChapList();
+}
+
+function renderDetailChapList(){
+  const n=novels[activeNovel];
+  const list=document.getElementById("detailChapList");
+  list.innerHTML="";
+  if(!n||!n.chapters.length){
+    list.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink-3);font-size:13px">尚無章節，點擊上方「＋ 新增」加入</div>';
+    return;
+  }
+  const sorted=[...n.chapters.keys()].sort((a,b)=>{
+    const ka=chapSortKey(n.chapters[a].title);
+    const kb=chapSortKey(n.chapters[b].title);
+    return ka!==kb?ka-kb:(n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
+  });
+  const resumeChap=(n.lastChapter!=null&&n.lastChapter<n.chapters.length)?n.lastChapter:0;
+  sorted.forEach((realIdx,pos)=>{
+    const c=n.chapters[realIdx];
+    const item=document.createElement("div");
+    item.className="detail-chap-item"+(realIdx===resumeChap?" active-chap":"");
+    const numEl=document.createElement("span");
+    numEl.className="detail-chap-num";
+    numEl.textContent=pos+1;
+    const titleEl=document.createElement("span");
+    titleEl.className="detail-chap-title";
+    titleEl.textContent=c.title||`第${realIdx+1}章`;
+    const badge=realIdx===resumeChap?document.createElement("span"):null;
+    if(badge){ badge.style.cssText="font-size:10px;background:var(--gold);color:white;padding:2px 6px;border-radius:10px;"; badge.textContent="上次"; }
+    const actions=document.createElement("div");
+    actions.className="detail-chap-actions";
+    const editBtn=document.createElement("button");
+    editBtn.className="btn-g btn-sm";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
+    editBtn.addEventListener("click",e=>{e.stopPropagation();openEditModal(activeNovel,realIdx);});
+    actions.appendChild(editBtn);
+    item.appendChild(numEl);item.appendChild(titleEl);
+    if(badge) item.appendChild(badge);
+    item.appendChild(actions);
+    item.addEventListener("click",()=>startReading(realIdx));
+    list.appendChild(item);
+  });
+}
+
+function startReading(chapIdx){
+  const n=novels[activeNovel];
   document.getElementById("novelTitleBar").textContent=n.name;
   showView("viewNovel");
   renderToc();
-  // Restore last read chapter (default to 0)
-  const resumeChap = (n.lastChapter != null && n.lastChapter < n.chapters.length)
-    ? n.lastChapter : 0;
-  if(n.chapters.length>0)loadChapter(resumeChap);
-  else{document.getElementById("paneContent").textContent="";document.getElementById("chapterTitle").textContent="尚無章節";}
-  // Build RAG index in background after UI renders
-  setTimeout(()=>{
-    const count = buildRagIndex(idx);
-    console.log(`RAG ready: ${count} chunks for ${n.name}`);
-  }, 500);
+  loadChapter(chapIdx);
+}
+
+function continueReading(){
+  const n=novels[activeNovel];
+  const resumeChap=(n.lastChapter!=null&&n.lastChapter<n.chapters.length)?n.lastChapter:0;
+  startReading(resumeChap);
 }
 
 // Extract leading number from chapter title for sorting
@@ -1714,7 +1866,7 @@ function initBatchUpload(){
   // Use event delegation on document for batchChapFiles
   // because the input lives inside TOC which gets re-rendered
   document.addEventListener("change", function(e){
-    if(e.target && (e.target.id === "batchChapFiles" || e.target.id === "batchChapFiles2")){
+    if(e.target && (e.target.id==="batchChapFiles"||e.target.id==="batchChapFiles2"||e.target.id==="detailBatchFiles")){
       if(!e.target.files.length) return;
       batchImportChapters(Array.from(e.target.files));
       e.target.value = "";
@@ -1783,6 +1935,9 @@ function confirmChapter(){
   const targetIdx=editingChapterIdx>=0?editingChapterIdx:n.chapters.length-1;
   loadChapter(targetIdx);
   showToast(editingChapterIdx>=0?"✅ 章節已更新":"✅ 章節已新增");
+  // Refresh detail page if visible
+  const dv2=document.getElementById("viewDetail");
+  if(dv2&&dv2.classList.contains("active")) renderDetailChapList();
 }
 function deleteChapter(){
   if(activeNovel<0||editingChapterIdx<0)return;
@@ -2080,7 +2235,7 @@ function fbLogin(){
     fbUser = { uid };
     localStorage.setItem('nr3_fbuid', uid);
     setFbLoggedIn(true);
-    setFbStatus('✅ 已連線！可以開始備份或還原。');
+    setFbStatus('✅ 已連線！識別碼：' + uid.slice(0,8) + '...');
     document.getElementById('fbPassword').value = '';
   }).catch(e=> setFbStatus('連線失敗：'+e.message, true));
 }
