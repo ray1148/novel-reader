@@ -74,27 +74,74 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 
 /* ── Novel View (TOC + Reader) ── */
 /* Novel reading overlay UI - hidden by default, shown on tap */
-.novel-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--paper-2);flex-shrink:0;position:fixed;top:52px;left:0;right:0;z-index:80;transition:transform .28s ease,opacity .28s ease;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.novel-header.ui-hidden{transform:translateY(calc(-100% - 56px));opacity:0;pointer-events:none}
+.novel-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(20,18,14,.92);backdrop-filter:blur(8px);color:rgba(255,255,255,.85);flex-shrink:0;position:fixed;top:0;left:0;right:0;z-index:80;transition:transform .28s ease,opacity .28s ease}
+.novel-header.ui-hidden{transform:translateY(-110%);opacity:0;pointer-events:none}
+.novel-header .back-btn{color:rgba(255,255,255,.8)}
+.novel-header .back-btn:hover{background:rgba(255,255,255,.15)}
+.novel-header .btn-ghost,.novel-header .btn-g{color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);background:none}
+.novel-header .btn-ghost:hover,.novel-header .btn-g:hover{color:white;border-color:rgba(255,255,255,.5)}
 /* Bottom bar: TOC + prev/next */
-.reading-bottom-bar{position:fixed;bottom:0;left:0;right:0;z-index:80;background:rgba(20,18,14,.92);backdrop-filter:blur(8px);padding:0;display:flex;flex-direction:column;transition:transform .28s ease,opacity .28s ease}
+.reading-bottom-bar{
+  position:fixed;bottom:0;left:0;right:0;z-index:80;
+  background:#1a1814;
+  display:flex;flex-direction:column;
+  transition:transform .28s ease,opacity .28s ease;
+  user-select:none;
+}
 .reading-bottom-bar.ui-hidden{transform:translateY(110%);opacity:0;pointer-events:none}
-/* Progress row */
-.rb-progress-row{display:flex;align-items:center;gap:10px;padding:10px 16px 4px;color:rgba(255,255,255,.7);font-size:12px}
-.rb-prog-label{min-width:60px;text-align:center}
-.rb-prog-pct{min-width:40px;text-align:right}
-.rb-slider{flex:1;-webkit-appearance:none;height:3px;border-radius:2px;background:rgba(255,255,255,.25);outline:none;cursor:pointer}
-.rb-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:white;cursor:pointer}
-.rb-nav-row{display:flex;align-items:center;justify-content:space-between;padding:4px 16px 8px}
-.rb-nav-btn{background:none;border:none;color:rgba(255,255,255,.8);font-size:13px;cursor:pointer;padding:6px 12px;display:flex;flex-direction:column;align-items:center;gap:2px}
-.rb-nav-btn span{font-size:10px;opacity:.6;max-width:80px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.rb-nav-btn.disabled{opacity:.3;pointer-events:none}
-.rb-nav-btn:hover{color:white}
-/* Icon buttons row */
-.rb-icon-row{display:flex;align-items:center;justify-content:space-around;padding:8px 16px 14px;border-top:1px solid rgba(255,255,255,.1)}
-.rb-icon-btn{background:none;border:none;color:rgba(255,255,255,.7);font-size:22px;cursor:pointer;padding:4px 12px;display:flex;flex-direction:column;align-items:center;gap:3px}
-.rb-icon-btn span{font-size:10px;color:rgba(255,255,255,.5)}
+
+/* Row 1: chapter label + progress % */
+.rb-info-row{
+  display:flex;align-items:center;justify-content:center;gap:16px;
+  padding:10px 20px 2px;
+  color:rgba(255,255,255,.55);font-size:12px;
+}
+
+/* Row 2: < slider > */
+.rb-slider-row{
+  display:flex;align-items:center;gap:0;
+  padding:4px 0 8px;
+}
+.rb-arr{
+  background:none;border:none;
+  color:rgba(255,255,255,.8);font-size:24px;font-weight:300;
+  cursor:pointer;padding:0 16px;line-height:1;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+}
+.rb-arr span{font-size:10px;color:rgba(255,255,255,.4);font-weight:400}
+.rb-arr.disabled{opacity:.3;pointer-events:none}
+.rb-slider{
+  flex:1;-webkit-appearance:none;appearance:none;
+  height:3px;border-radius:2px;
+  background:rgba(255,255,255,.2);
+  outline:none;cursor:pointer;
+}
+.rb-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:18px;height:18px;
+  border-radius:50%;background:#4a9eff;
+  cursor:pointer;box-shadow:0 0 4px rgba(74,158,255,.6);
+}
+.rb-slider::-moz-range-thumb{
+  width:18px;height:18px;border-radius:50%;
+  background:#4a9eff;border:none;cursor:pointer;
+}
+
+/* Row 3: icon buttons */
+.rb-icon-row{
+  display:flex;flex-direction:row;align-items:center;justify-content:space-around;
+  padding:6px 16px 20px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+.rb-icon-btn{
+  background:none;border:none;
+  color:rgba(255,255,255,.7);
+  cursor:pointer;padding:6px 20px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  font-size:22px;min-width:60px;
+}
+.rb-icon-btn span{font-size:11px;color:rgba(255,255,255,.45);font-family:var(--font-ui)}
 .rb-icon-btn:hover{color:white}
+.rb-icon-btn:hover span{color:rgba(255,255,255,.8)}
 .back-btn{background:none;border:none;font-size:18px;cursor:pointer;color:var(--ink-2);padding:4px 8px;border-radius:var(--radius)}
 .back-btn:hover{background:var(--paper-3)}
 .novel-title-bar{flex:1;font-size:14px;font-weight:500}
@@ -505,11 +552,24 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       </div>
     </div>
   
-  <!-- Reading bottom bar -->
+  <!-- Reading bottom bar (WebNovel style) -->
   <div class="reading-bottom-bar ui-hidden" id="readingBottomBar">
-    <button class="rb-btn" id="rbPrev">&#8592; <span id="rbPrevTitle">上一章</span></button>
-    <button class="rb-btn" id="rbToc">&#9776; 目錄</button>
-    <button class="rb-btn" id="rbNext"><span id="rbNextTitle">下一章</span> &#8594;</button>
+    <div class="rb-info-row">
+      <span id="rbChapLabel">第1章</span>
+      <span style="opacity:.3">|</span>
+      <span id="rbPct">0%</span>
+    </div>
+    <div class="rb-slider-row">
+      <button class="rb-arr" id="rbPrev">&#8249;<span id="rbPrevTitle">上一章</span></button>
+      <input type="range" class="rb-slider" id="rbSlider" min="0" max="100" value="0">
+      <button class="rb-arr" id="rbNext">&#8250;<span id="rbNextTitle">下一章</span></button>
+    </div>
+    <div class="rb-icon-row">
+      <button class="rb-icon-btn" id="rbToc" onclick="clearTimeout(uiTimer);toggleToc()">&#9776;<span>目錄</span></button>
+      <button class="rb-icon-btn" id="rbTheme" onclick="cycleTheme()">&#9790;<span>夜間</span></button>
+      <button class="rb-icon-btn" onclick="showFontPanel()">Aa<span>字體</span></button>
+      <button class="rb-icon-btn" onclick="clearTimeout(uiTimer);togglePanel()">&#10022;<span>AI</span></button>
+    </div>
   </div>
 </div>
 </div>
@@ -1274,6 +1334,7 @@ function toggleReadingUI(){
 function updateBottomBar(){
   if(activeNovel<0) return;
   const n=novels[activeNovel];
+  const c=n.chapters[activeChapter];
   const sorted=[...n.chapters.keys()].sort((a,b)=>{
     const ka=chapSortKey(n.chapters[a].title);
     const kb=chapSortKey(n.chapters[b].title);
@@ -1284,19 +1345,82 @@ function updateBottomBar(){
   const prevIdx=curPos>0?sorted[curPos-1]:-1;
   const nextIdx=curPos<sorted.length-1?sorted[curPos+1]:-1;
 
+  // Chapter label and progress
+  const chapLabel = document.getElementById("rbChapLabel");
+  const chapInfo  = document.getElementById("rbChapInfo");
+  const pct = Math.round((c?.scrollPct||0)*100);
+  if(chapLabel) chapLabel.textContent = c?.title || ("第"+(activeChapter+1)+"章");
+  if(chapInfo)  chapInfo.textContent  = (curPos+1) + " / " + sorted.length;
+
+  // Slider synced to scroll position
+  const slider = document.getElementById("rbSlider");
+  if(slider){
+    slider.value = pct;
+    slider.oninput = function(){
+      const pane = document.getElementById("paneLeft");
+      const target = (this.value/100) * (pane.scrollHeight - pane.clientHeight);
+      pane.scrollTop = target;
+    };
+  }
+
+  // Pct label
+  const pctEl = document.getElementById("rbPct");
+  if(pctEl) pctEl.textContent = pct + "%";
+
+  // Prev / Next buttons
   const prevBtn=document.getElementById("rbPrev");
   const nextBtn=document.getElementById("rbNext");
-  document.getElementById("rbPrevTitle").textContent=prevIdx>=0?(n.chapters[prevIdx].title||"上一章"):"沒有上一章";
-  document.getElementById("rbNextTitle").textContent=nextIdx>=0?(n.chapters[nextIdx].title||"下一章"):"沒有下一章";
-  prevBtn.classList.toggle("disabled", prevIdx<0);
-  nextBtn.classList.toggle("disabled", nextIdx<0);
+  const prevTitle = document.getElementById("rbPrevTitle");
+  const nextTitle = document.getElementById("rbNextTitle");
+  if(prevTitle) prevTitle.textContent = prevIdx>=0?(n.chapters[prevIdx].title||"上一章"):"─";
+  if(nextTitle) nextTitle.textContent = nextIdx>=0?(n.chapters[nextIdx].title||"下一章"):"─";
+  if(prevBtn){
+    prevBtn.classList.toggle("disabled", prevIdx<0);
+    prevBtn.onclick = prevIdx>=0?()=>{ loadChapter(prevIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }:null;
+  }
+  if(nextBtn){
+    nextBtn.classList.toggle("disabled", nextIdx<0);
+    nextBtn.onclick = nextIdx>=0?()=>{ loadChapter(nextIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }:null;
+  }
+}
 
-  prevBtn.onclick=prevIdx>=0?()=>{hideReadingUI();loadChapter(prevIdx);document.getElementById("paneLeft").scrollTop=0;}:null;
-  nextBtn.onclick=nextIdx>=0?()=>{hideReadingUI();loadChapter(nextIdx);document.getElementById("paneLeft").scrollTop=0;}:null;
-  document.getElementById("rbToc").onclick=()=>{
-    clearTimeout(uiTimer); // keep UI visible while TOC is open
-    toggleToc();
-  };
+// Update slider when scrolling
+function updateBottomBarScroll(){
+  if(activeNovel<0) return;
+  const pane = document.getElementById("paneLeft");
+  const pct = pane.scrollHeight > pane.clientHeight
+    ? Math.round(pane.scrollTop/(pane.scrollHeight-pane.clientHeight)*100) : 0;
+  const slider = document.getElementById("rbSlider");
+  const pctEl  = document.getElementById("rbPct");
+  if(slider) slider.value = pct;
+  if(pctEl)  pctEl.textContent = pct + "%";
+}
+
+// Cycle through themes
+function cycleTheme(){
+  const themes=["light","sepia","dark"];
+  const cur=settings.theme||"light";
+  const next=themes[(themes.indexOf(cur)+1)%themes.length];
+  setTheme(next);
+  const icons={"light":"☀","sepia":"📖","dark":"🌙"};
+  const labels={"light":"亮色","sepia":"護眼","dark":"暗色"};
+  const btn=document.getElementById("rbTheme");
+  if(btn) btn.innerHTML=icons[next]+"<span>"+labels[next]+"</span>";
+  showToast(icons[next]+" "+labels[next]);
+  clearTimeout(uiTimer);
+  uiTimer=setTimeout(hideReadingUI,2000);
+}
+
+// Show font panel (simple toast for now - settings already has full controls)
+function showFontPanel(){
+  // Quick font size toggle in reading mode
+  const sizes = [15,17,19,21];
+  const cur = parseInt(settings.fontSize)||17;
+  const next = sizes[(sizes.indexOf(cur)+1)%sizes.length];
+  updateFontSize(next);
+  showToast("字體大小：" + next + "px");
+  clearTimeout(uiTimer);
+  uiTimer = setTimeout(hideReadingUI, 2000);
 }
 
 // ══ Scroll tracking ══
@@ -1321,6 +1445,11 @@ document.getElementById("paneLeft").addEventListener("scroll",function(){
   if(c) c.scrollPct=pct;
   updateTopBar();
   clearTimeout(saveTimer);saveTimer=setTimeout(()=>{persist();if(panelOpen&&curTab==="progress")updateProgress();},1200);
+  // Sync slider
+  const slider=document.getElementById("rbSlider");
+  const pctEl=document.getElementById("rbPct");
+  if(slider&&uiVisible){ slider.value=Math.round(pct*100); if(pctEl) pctEl.textContent=Math.round(pct*100)+"%"; }
+  updateBottomBarScroll();
   lastScrollY = this.scrollTop;
 });
 function updateTopBar(){
