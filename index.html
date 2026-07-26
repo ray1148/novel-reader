@@ -1197,11 +1197,43 @@ function continueReading(){
 }
 
 // Extract leading number from chapter title for sorting
+// Convert Chinese numerals to Arabic numbers
+function chineseToNum(s){
+  const map={'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,
+    '十':10,'百':100,'千':1000,'萬':10000,
+    '〇':0,'壹':1,'貳':2,'叄':3,'肆':4,'伍':5,'陸':6,'柒':7,'捌':8,'玖':9};
+  if(!s) return NaN;
+  // If pure digits, return directly
+  if(/^\d+$/.test(s)) return parseInt(s);
+  // Handle simple cases like 一二三四 or 十一 二十三
+  let result=0, cur=0, hasUnit=false;
+  for(const ch of s){
+    const v=map[ch];
+    if(v===undefined) return NaN;
+    if(v>=10){ // unit character
+      if(cur===0) cur=1; // handle 十 -> 十 = 10
+      result+=cur*v; cur=0; hasUnit=true;
+    } else {
+      cur=v;
+    }
+  }
+  result+=cur;
+  return result||NaN;
+}
+
 function chapSortKey(title){
   if(!title) return Infinity;
-  // match "第X章", "Chapter X", or leading digits
+  // Match Arabic digits: "第123章", "Chapter 5", "001", "123."
   let m = title.match(/^(?:第\s*(\d+)|Chapter\s*(\d+)|(\d+))/i);
   if(m) return parseInt(m[1]||m[2]||m[3]);
+  // Match Chinese numerals: "第一章", "第十二章", "第一百章"
+  let m2 = title.match(/^第\s*([零一二三四五六七八九十百千萬〇壹貳叄肆伍陸柒捌玖]+)\s*章/);
+  if(m2){ const n=chineseToNum(m2[1]); if(!isNaN(n)) return n; }
+  // Match mixed: 第1話 第2回 etc.
+  let m3 = title.match(/^第\s*(\d+)\s*[話回節话]/);
+  if(m3) return parseInt(m3[1]);
+  let m4 = title.match(/^第\s*([零一二三四五六七八九十百千萬]+)\s*[話回節话]/);
+  if(m4){ const n=chineseToNum(m4[1]); if(!isNaN(n)) return n; }
   return Infinity;
 }
 function renderToc(){
