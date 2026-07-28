@@ -20,7 +20,9 @@ body.theme-dark{
   --paper:#1a1814;--paper-2:#242018;--paper-3:#2e2a24;
   --gold:#d4a030;--gold-bg:#2a2010;
 }
-body.theme-dark header{background:#0e0c0a}
+body.theme-dark header{background:#0e0c0a;color:rgba(255,255,255,.9)}
+body.theme-dark .hbtn{color:rgba(255,255,255,.85);border-color:rgba(255,255,255,.25)}
+body.theme-dark .hbtn.active{color:#fff}
 body.theme-dark .ai-panel{background:#1e1a14;border-color:var(--paper-3)}
 body.theme-dark .modal{background:#1e1a14}
 body.theme-dark .file-drop{border-color:var(--paper-3)}
@@ -350,6 +352,15 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .color-swatches{display:flex;gap:8px;flex-wrap:wrap}
 .swatch{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.15s}
 .swatch.selected{border-color:var(--ink);transform:scale(1.15)}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold);border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer}
+.tag-chip:hover{opacity:.75}
+.book-tag{display:inline-block;background:var(--gold-bg);color:var(--gold);border-radius:10px;padding:1px 7px;font-size:10px;line-height:1.6}
+.search-result-item{background:var(--paper-2);border:1px solid var(--paper-3);border-radius:var(--radius);padding:10px 12px;cursor:pointer;transition:.15s}
+.search-result-item:hover{border-color:var(--gold)}
+.search-result-title{font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.search-result-chap{font-size:12px;color:var(--gold);margin-top:2px}
+.search-result-snippet{font-size:12.5px;color:var(--ink-2);margin-top:4px;line-height:1.6}
+.search-result-snippet mark{background:var(--gold);color:white;border-radius:2px;padding:0 1px}
 
 @media(max-width:640px){
   :root{--panel-w:100vw}
@@ -381,12 +392,21 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
   <div class="shelf">
     <div class="shelf-header">
       <span>我的書架</span>
-      <button class="btn-primary btn-sm" onclick="openAddModal()">＋ 新增小說</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-g btn-sm" onclick="openSearchModal()">🔍 搜尋</button>
+        <button class="btn-primary btn-sm" onclick="openAddModal()">＋ 新增小說</button>
+      </div>
     </div>
+    <div id="shelfTagFilterRow" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
     <div class="empty-shelf" id="shelfEmpty" style="display:none">
       <div class="big-icon">📚</div>
       <h2>書架還是空的</h2>
       <p>點擊右上角「＋ 新增小說」開始建立你的書庫</p>
+    </div>
+    <div class="empty-shelf" id="shelfFilterEmpty" style="display:none">
+      <div class="big-icon">🔖</div>
+      <h2>沒有符合篩選條件的書</h2>
+      <p>試試看選別的標籤，或點「全部」清除篩選</p>
     </div>
     <div class="shelf-grid" id="shelfGrid" style="display:none"></div>
   </div>
@@ -407,6 +427,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <div class="detail-info">
         <div class="detail-novel-title" id="detailNovelTitle"></div>
         <div class="detail-author" id="detailAuthor"></div>
+        <div id="detailTags" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px"></div>
         <div class="detail-stats" id="detailStats"></div>
       </div>
     </div>
@@ -668,9 +689,9 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <!-- Gemini section -->
       <div class="msection" id="geminiSection" style="display:none">
         <div style="font-size:12px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:10px 12px;border-radius:var(--radius)">
-          免費方案每天 1500 次請求。前往
+          目前使用 <strong>gemini-2.5-flash-lite</strong>（免費方案的輕量模型，額度較寬鬆）。前往
           <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a>
-          → Get API key 取得。
+          → Get API key 取得金鑰；免費額度會不定期調整，實際次數以 AI Studio 頁面顯示為準。
         </div>
         <label style="font-size:13px;color:var(--ink-2)">Gemini API Key</label>
         <div style="display:flex;gap:8px">
@@ -727,6 +748,13 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     </div>
 
     <div class="settings-section">
+      <div class="settings-title">⏱ 閱讀時間統計</div>
+      <div style="font-size:13px;color:var(--ink-2)">今天已閱讀 <strong id="readStatsToday" style="color:var(--gold);font-size:16px">0 分鐘</strong></div>
+      <div id="readStatsWeek" style="margin-top:10px"></div>
+      <div style="font-size:11px;color:var(--ink-3);margin-top:4px">只計算頁面在前景、且正在閱讀章節內容的時間，切到別的分頁或鎖螢幕不會累計。</div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-title">☁ Firebase 雲端備份</div>
       <div style="font-size:13px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:12px;border-radius:var(--radius)">
         使用 <strong>Google Firebase Firestore</strong>（免費方案完全夠用）同步資料，換手機也可以繼續閱讀。
@@ -739,16 +767,23 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         </div>
       </div>
       <div class="msection" id="fbLoginSection" style="display:none">
-        <label style="font-size:13px;color:var(--ink-2)">設定密碼（所有裝置用同一組）</label>
-        <div style="display:flex;gap:8px">
-          <input type="password" class="pinput" id="fbPassword" placeholder="輸入密碼..." style="font-size:13px">
-          <button class="btn-p btn-sm" id="btnFbLogin" onclick="fbLogin()">連線</button>
+        <label style="font-size:13px;color:var(--ink-2)">帳號登入（所有裝置用同一組）</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input type="email" class="pinput" id="fbEmail" placeholder="Email..." style="font-size:13px">
+          <div style="display:flex;gap:8px">
+            <input type="password" class="pinput" id="fbPassword" placeholder="輸入密碼..." style="font-size:13px">
+            <button class="btn-p btn-sm" id="btnFbLogin" onclick="fbLogin()">連線</button>
+          </div>
         </div>
-        <div style="font-size:11px;color:var(--ink-3);line-height:1.6">※ 所有裝置輸入相同密碼即可同步。密碼用於識別資料，請勿忘記。</div>
+        <div style="font-size:11px;color:var(--ink-3);line-height:1.6">※ 首次輸入的 Email+密碼會自動建立帳號，之後所有裝置輸入相同帳密即可同步。這是真正的 Firebase 帳號登入，請到 Firestore 規則設定：<code>allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;</code>（將 users/{uid} 的 uid 換成路徑變數名稱）。</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap" id="fbActions">
-          <button class="btn-g btn-sm" id="btnFbBackup" style="display:none" onclick="fbBackup()">▲ 備份到雲端</button>
+          <button class="btn-g btn-sm" id="btnFbBackup" style="display:none" onclick="fbBackup()">▲ 同步到雲端</button>
           <button class="btn-g btn-sm" id="btnFbRestore" style="display:none" onclick="fbRestore()">▼ 從雲端還原</button>
           <button class="btn-g btn-sm" id="btnFbLogout" style="display:none" onclick="fbLogout()">中斷連線</button>
+        </div>
+        <div style="display:none;align-items:center;gap:8px;margin-top:6px" id="autoSyncRow">
+          <label class="sw" style="transform:scale(.8);flex-shrink:0"><input type="checkbox" id="autoSyncToggle" onchange="toggleAutoSync(this.checked)"><span class="sl"></span></label>
+          <span style="font-size:12px;color:var(--ink-3)">自動同步（背景每隔幾分鐘偵測變更並只上傳差異）</span>
         </div>
       </div>
       <div style="font-size:12px;color:var(--ink-3)" id="fbStatus"></div>
@@ -756,6 +791,10 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 <div class="settings-section">
       <div class="settings-title">資料管理</div>
       <div style="font-size:13px;color:var(--ink-2)">目前儲存 <strong id="storageNovelCount">0</strong> 本小說，<strong id="storageSize">—</strong></div>
+      <div style="font-size:12px;color:var(--ink-3);margin-top:4px" id="storageRemain">—</div>
+      <div style="height:6px;border-radius:4px;background:var(--paper-2);overflow:hidden;margin-top:6px">
+        <div id="storageBar" style="height:100%;width:0%;background:var(--gold);transition:width .3s"></div>
+      </div>
       <button class="btn-g btn-sm" onclick="rebuildAllRagIndex()">🔍 重建 AI 搜尋索引</button>
       <div style="font-size:11px;color:var(--ink-3)">索引在記憶體中，重開頁面後自動重建。</div>
       <button class="btn-danger" onclick="clearAll()">🗑 清除所有資料</button>
@@ -784,6 +823,15 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         <div class="color-swatches" id="colorSwatches"></div>
       </div>
       <div class="msection"><label>作者（可選）</label><input type="text" id="addAuthor" placeholder="作者名"></div>
+      <div class="msection">
+        <label>標籤（可選，可多選）</label>
+        <div id="addTagPresets" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div id="addTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input type="text" class="pinput" id="addTagInput" placeholder="自訂標籤，按 Enter 新增" style="font-size:13px" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTag('add');}">
+          <button class="btn-g btn-sm" onclick="addCustomTag('add')">＋ 新增</button>
+        </div>
+      </div>
       <div style="font-size:12px;color:var(--ink-3)">新增小說後可在目錄中分章節上傳文件。</div>
     </div>
     <div class="modal-footer"><button class="btn-ghost" onclick="closeModal('addModal')">取消</button><button class="btn-primary" onclick="confirmAddNovel()">建立</button></div>
@@ -797,6 +845,15 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <div class="modal-body">
       <div class="msection"><label>小說名稱</label><input type="text" id="editNovelName" placeholder="小說名稱"></div>
       <div class="msection"><label>作者（可選）</label><input type="text" id="editNovelAuthor" placeholder="作者名"></div>
+      <div class="msection">
+        <label>標籤（可選，可多選）</label>
+        <div id="editTagPresets" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        <div id="editTagChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input type="text" class="pinput" id="editTagInput" placeholder="自訂標籤，按 Enter 新增" style="font-size:13px" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTag('edit');}">
+          <button class="btn-g btn-sm" onclick="addCustomTag('edit')">＋ 新增</button>
+        </div>
+      </div>
       <div class="msection"><label>封面圖片</label>
         <label class="file-drop" style="padding:12px">
           <input type="file" accept="image/*" id="editCoverImgFile" onchange="handleEditCoverImg(this)">
@@ -815,6 +872,18 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <button class="btn-danger" onclick="confirmDeleteNovel()" style="margin-right:auto">刪除書籍</button>
       <button class="btn-ghost" onclick="closeModal('editNovelModal')">取消</button>
       <button class="btn-primary" onclick="confirmEditNovel()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Full-text search modal -->
+<div class="modal-overlay" id="searchModal">
+  <div class="modal">
+    <div class="modal-head"><h2>🔍 全文搜尋</h2><button class="btn-ghost btn-sm" onclick="closeModal('searchModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="text" class="pinput" id="searchInput" placeholder="搜尋書名、作者、章節標題、內文...（支援打錯字容錯）" oninput="debounceSearch()" style="font-size:15px">
+      <div id="searchStatus" style="font-size:12px;color:var(--ink-3);margin-top:6px"></div>
+      <div id="searchResults" style="margin-top:10px;display:flex;flex-direction:column;gap:10px"></div>
     </div>
   </div>
 </div>
@@ -906,6 +975,7 @@ function s2t(text){
 
 // ══ State ══
 let novels=[],activeNovel=-1,activeChapter=0,splitMode=false,panelOpen=false,curTab="chat",chatHist={},busy=false,saveTimer=null,tocVisible=true;
+let fbDirty=false; // set true whenever local data changes; auto-sync clears it after uploading
 let settings={fontSize:17,lineH:2.1,fontFamily:'Georgia,serif',theme:'light'};
 
 // Colors for book covers
@@ -913,10 +983,92 @@ const COVER_COLORS=["#4a3728","#2d4a6b","#3a5c3a","#6b2d3a","#4a3768","#2d5c5c",
 let selectedColor=COVER_COLORS[0];
 let editingChapterIdx=-1; // -1 = new
 
+// ══ IndexedDB (large-capacity local storage for novel data — localStorage caps out around 5-10MB,
+//    IndexedDB has far more headroom, which matters once your library gets big) ══
+const IDB_NAME='novelReaderDB', IDB_STORE='kv', IDB_VERSION=1;
+let idbInstance=null;
+function openIDB(){
+  return new Promise((resolve,reject)=>{
+    if(idbInstance){ resolve(idbInstance); return; }
+    if(!window.indexedDB){ reject(new Error('瀏覽器不支援 IndexedDB')); return; }
+    const req=indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded=(e)=>{
+      const db=e.target.result;
+      if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess=(e)=>{ idbInstance=e.target.result; resolve(idbInstance); };
+    req.onerror=(e)=>reject(e.target.error);
+  });
+}
+async function idbGet(key){
+  try{
+    const db=await openIDB();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(IDB_STORE,'readonly');
+      const req=tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+  }catch(e){ console.warn('idbGet failed:', e); return undefined; }
+}
+async function idbSet(key,value){
+  try{
+    const db=await openIDB();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put(value,key);
+      tx.oncomplete=()=>resolve(true);
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('idbSet failed:', e); return false; }
+}
+async function idbDelete(key){
+  try{
+    const db=await openIDB();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete=()=>resolve(true);
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ return false; }
+}
+
 // ══ Persist ══
-function persist(){try{localStorage.setItem("nr3",JSON.stringify(novels));}catch(e){const lite=novels.map(n=>({...n,chapters:n.chapters.map(c=>({...c,content:c.content?.substring(0,40000),origin:c.origin?.substring(0,20000),origContent:c.origContent?.substring(0,40000),origOrigin:c.origOrigin?.substring(0,20000)}))}));try{localStorage.setItem("nr3",JSON.stringify(lite));}catch(e2){}}}
-function load(){
-  try{const d=localStorage.getItem("nr3");if(d){novels=JSON.parse(d);novels.forEach(n=>{if(!n.bookmarks)n.bookmarks=[];if(n.scrollPct==null)n.scrollPct=0;if(!n.chapters)n.chapters=[];if(!n.color)n.color=COVER_COLORS[0];});}}catch(e){}
+function persist(){
+  fbDirty=true;
+  // 寫入 IndexedDB（非同步、容量遠大於 localStorage，不會卡住畫面）
+  idbSet('novels', novels).catch(e=>{
+    console.error('IndexedDB 儲存失敗，改用 localStorage 備援', e);
+    try{
+      localStorage.setItem("nr3",JSON.stringify(novels));
+    }catch(e2){
+      const lite=novels.map(n=>({...n,chapters:n.chapters.map(c=>({...c,content:c.content?.substring(0,40000),origin:c.origin?.substring(0,20000),origContent:c.origContent?.substring(0,40000),origOrigin:c.origOrigin?.substring(0,20000)}))}));
+      try{localStorage.setItem("nr3",JSON.stringify(lite));}catch(e3){}
+    }
+  });
+}
+async function load(){
+  let loaded=false;
+  try{
+    const d=await idbGet('novels');
+    if(d && Array.isArray(d)){ novels=d; loaded=true; }
+  }catch(e){}
+  if(!loaded){
+    // 舊版資料還存在 localStorage 裡（第一次升級到 IndexedDB），搬過去後就清掉，釋放本機空間
+    try{
+      const old=localStorage.getItem("nr3");
+      if(old){
+        novels=JSON.parse(old);
+        loaded=true;
+        await idbSet('novels', novels);
+        localStorage.removeItem("nr3");
+      }
+    }catch(e){}
+  }
+  if(loaded){
+    novels.forEach(n=>{if(!n.bookmarks)n.bookmarks=[];if(n.scrollPct==null)n.scrollPct=0;if(!n.chapters)n.chapters=[];if(!n.color)n.color=COVER_COLORS[0];if(!n.tags)n.tags=[];});
+  }
   const sk=localStorage.getItem("nr3_apikey");if(sk)document.getElementById("apiKeyInput").value=sk;
   const fs=localStorage.getItem("nr3_fs");if(fs){settings.fontSize=+fs;document.getElementById("fontSizeRange").value=fs;document.getElementById("fontSizeVal").textContent=fs+"px";applySettings();}
   const lh=localStorage.getItem("nr3_lh");if(lh){settings.lineH=+lh;document.getElementById("lineHRange").value=lh;document.getElementById("lineHVal").textContent=lh;applySettings();}
@@ -1019,7 +1171,7 @@ async function callAI(systemPrompt, userMessages, maxTokens=1000){
       role: m.role==='assistant'?'model':'user',
       parts:[{text: m.content}]
     }));
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+key;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key='+key;
     const r = await fetch(url, {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -1046,12 +1198,92 @@ async function callAI(systemPrompt, userMessages, maxTokens=1000){
   }
 }
 
+window.addEventListener('pagehide', stopReadingTimer);
+window.addEventListener('beforeunload', stopReadingTimer);
+
+// ══ Reading time tracking ══
+let readingTimerStart=null; // ms timestamp of current running segment, null when not tracking
+function todayKey(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function loadReadTimeData(){ try{return JSON.parse(localStorage.getItem('nr3_readtime')||'{}');}catch(e){return {};} }
+function saveReadTimeData(d){ try{localStorage.setItem('nr3_readtime', JSON.stringify(d));}catch(e){} }
+function startReadingTimer(){
+  if(readingTimerStart) return;
+  if(document.visibilityState==='hidden') return;
+  readingTimerStart = Date.now();
+}
+function stopReadingTimer(){
+  if(!readingTimerStart) return;
+  const elapsed = Date.now()-readingTimerStart;
+  readingTimerStart = null;
+  if(elapsed<=0) return;
+  const data = loadReadTimeData();
+  const key = todayKey();
+  data[key] = (data[key]||0) + elapsed;
+  saveReadTimeData(data);
+  fbDirty = true;
+}
+// 每 30 秒把已累積的時間存檔一次，避免關頁/當機時遺失，之後接著計時
+function flushReadingTimer(){
+  if(!readingTimerStart) return;
+  stopReadingTimer();
+  startReadingTimer();
+}
+setInterval(flushReadingTimer, 30000);
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden'){
+    stopReadingTimer();
+  } else if(document.getElementById('viewNovel').classList.contains('active')){
+    startReadingTimer();
+  }
+});
+function formatDuration(ms){
+  const totalMin = Math.round(ms/60000);
+  if(totalMin<1) return '不到 1 分鐘';
+  if(totalMin<60) return totalMin+' 分鐘';
+  const h=Math.floor(totalMin/60), m=totalMin%60;
+  return m>0 ? `${h} 小時 ${m} 分鐘` : `${h} 小時`;
+}
+function renderReadingStats(){
+  const todayEl = document.getElementById('readStatsToday');
+  const weekEl  = document.getElementById('readStatsWeek');
+  if(!todayEl || !weekEl) return;
+  // 先把目前正在跑的這段也算進去，畫面才不會停在上次 flush 的數字
+  const data = loadReadTimeData();
+  const key = todayKey();
+  let todayMs = data[key]||0;
+  if(readingTimerStart) todayMs += (Date.now()-readingTimerStart);
+  todayEl.textContent = formatDuration(todayMs);
+
+  weekEl.innerHTML = '';
+  const days=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date(); d.setDate(d.getDate()-i);
+    const k=todayKey(d);
+    let ms=data[k]||0;
+    if(i===0 && readingTimerStart) ms+=(Date.now()-readingTimerStart);
+    days.push({label:(d.getMonth()+1)+'/'+d.getDate(), ms});
+  }
+  const maxMs=Math.max(...days.map(d=>d.ms),1);
+  days.forEach(d=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px;color:var(--ink-3)';
+    const label=document.createElement('span'); label.style.cssText='width:36px;flex-shrink:0'; label.textContent=d.label;
+    const barWrap=document.createElement('div'); barWrap.style.cssText='flex:1;height:8px;border-radius:4px;background:var(--paper-2);overflow:hidden';
+    const bar=document.createElement('div'); bar.style.cssText=`height:100%;background:var(--gold);width:${d.ms>0?Math.max(4,(d.ms/maxMs*100)):0}%`;
+    barWrap.appendChild(bar);
+    const val=document.createElement('span'); val.style.cssText='width:64px;text-align:right;flex-shrink:0'; val.textContent=d.ms>0?formatDuration(d.ms):'—';
+    row.append(label,barWrap,val);
+    weekEl.appendChild(row);
+  });
+}
+
 // ══ Views ══
 function showView(id){
   ["viewShelf","viewDetail","viewNovel","viewSettings"].forEach(v=>{
     document.getElementById(v).classList.toggle("active",v===id);
   });
   const inNovel = id==="viewNovel";
+  if(inNovel) startReadingTimer(); else stopReadingTimer();
   // Hide global header and pgbar when reading (they re-appear as overlay on tap)
   document.querySelector("header").style.display = inNovel ? "none" : "flex";
   document.querySelector(".pgbar-wrap").style.display = inNovel ? "none" : "block";
@@ -1077,27 +1309,73 @@ function goNovelBack(){
   if(activeNovel>=0) showDetail(activeNovel);
   else goShelf();
 }
-function goSettings(){showView("viewSettings");updateStorageInfo();}
+function goSettings(){showView("viewSettings");updateStorageInfo();renderReadingStats();}
 
 // ══ Shelf ══
+let shelfTagFilter=[]; // selected tags to filter by (OR logic); empty = show all
+function renderShelfTagFilter(){
+  const row=document.getElementById("shelfTagFilterRow");
+  if(!row)return;
+  // Collect all tags actually in use, in order of first appearance
+  const allTags=[];
+  novels.forEach(n=>(n.tags||[]).forEach(t=>{ if(!allTags.includes(t)) allTags.push(t); }));
+  // Drop selected tags that no longer exist on any book
+  shelfTagFilter=shelfTagFilter.filter(t=>allTags.includes(t));
+  if(allTags.length===0){ row.style.display="none"; row.innerHTML=""; return; }
+  row.style.display="flex";
+  row.innerHTML="";
+  const allBtn=document.createElement("button");
+  allBtn.type="button";
+  allBtn.className="theme-btn"+(shelfTagFilter.length===0?" active":"");
+  allBtn.textContent="全部";
+  allBtn.onclick=()=>{ shelfTagFilter=[]; renderShelfTagFilter(); renderShelf(); };
+  row.appendChild(allBtn);
+  allTags.forEach(t=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.className="theme-btn"+(shelfTagFilter.includes(t)?" active":"");
+    btn.textContent=t;
+    btn.onclick=()=>{
+      const i=shelfTagFilter.indexOf(t);
+      if(i>=0) shelfTagFilter.splice(i,1); else shelfTagFilter.push(t);
+      renderShelfTagFilter(); renderShelf();
+    };
+    row.appendChild(btn);
+  });
+}
 function renderShelf(){
   const grid=document.getElementById("shelfGrid");
   const emptyMsg=document.getElementById("shelfEmpty");
+  const filterEmptyMsg=document.getElementById("shelfFilterEmpty");
   if(!grid)return;
+  renderShelfTagFilter();
   grid.innerHTML="";
   if(!novels.length){
     if(emptyMsg)emptyMsg.style.display="flex";
+    if(filterEmptyMsg)filterEmptyMsg.style.display="none";
     grid.style.display="none";
     return;
   }
   if(emptyMsg)emptyMsg.style.display="none";
-  grid.style.display="grid";
   // Sort by last opened (most recent first), unsaved novels go to end
-  const sortedIndices = [...novels.keys()].sort((a,b)=>{
+  let sortedIndices = [...novels.keys()].sort((a,b)=>{
     const ta = novels[a].lastOpenedAt || 0;
     const tb = novels[b].lastOpenedAt || 0;
     return tb - ta;
   });
+  if(shelfTagFilter.length>0){
+    sortedIndices = sortedIndices.filter(i=>{
+      const tags=novels[i].tags||[];
+      return shelfTagFilter.some(t=>tags.includes(t));
+    });
+  }
+  if(sortedIndices.length===0){
+    grid.style.display="none";
+    if(filterEmptyMsg)filterEmptyMsg.style.display="flex";
+    return;
+  }
+  if(filterEmptyMsg)filterEmptyMsg.style.display="none";
+  grid.style.display="grid";
 
   sortedIndices.forEach(i=>{
     const n=novels[i];
@@ -1199,6 +1477,16 @@ function showDetail(idx){
   document.getElementById("detailTitle").textContent=n.name;
   document.getElementById("detailNovelTitle").textContent=n.name;
   document.getElementById("detailAuthor").textContent=n.author||"";
+  const detailTagsEl=document.getElementById("detailTags");
+  if(detailTagsEl){
+    detailTagsEl.innerHTML="";
+    (n.tags||[]).forEach(t=>{
+      const tagEl=document.createElement("span");
+      tagEl.className="book-tag";
+      tagEl.textContent=t;
+      detailTagsEl.appendChild(tagEl);
+    });
+  }
   // Cover
   const cover=document.getElementById("detailCover");
   const coverImg=document.getElementById("detailCoverImg");
@@ -1311,17 +1599,18 @@ function chineseToNum(s){
 
 function chapSortKey(title){
   if(!title) return Infinity;
-  // Match Arabic digits: "第123章", "Chapter 5", "001", "123."
-  let m = title.match(/^(?:第\s*(\d+)|Chapter\s*(\d+)|(\d+))/i);
-  if(m) return parseInt(m[1]||m[2]||m[3]);
-  // Match Chinese numerals: "第一章", "第十二章", "第一百章"
-  let m2 = title.match(/^第\s*([零一二三四五六七八九十百千萬〇壹貳叄肆伍陸柒捌玖]+)\s*章/);
+  // Match "第123章/話/回/節" anywhere in the title (allows prefixes like "怪談上班第1章")
+  let m = title.match(/第\s*(\d+)\s*[章話回節话]/);
+  if(m) return parseInt(m[1]);
+  // Match Chinese numerals anywhere: "第一章", "第十二章", "第一百章"
+  let m2 = title.match(/第\s*([零一二三四五六七八九十百千萬〇壹貳叄肆伍陸柒捌玖]+)\s*[章話回節话]/);
   if(m2){ const n=chineseToNum(m2[1]); if(!isNaN(n)) return n; }
-  // Match mixed: 第1話 第2回 etc.
-  let m3 = title.match(/^第\s*(\d+)\s*[話回節话]/);
+  // Match "Chapter 5" anywhere
+  let m3 = title.match(/Chapter\s*(\d+)/i);
   if(m3) return parseInt(m3[1]);
-  let m4 = title.match(/^第\s*([零一二三四五六七八九十百千萬]+)\s*[話回節话]/);
-  if(m4){ const n=chineseToNum(m4[1]); if(!isNaN(n)) return n; }
+  // Fallback: first run of digits anywhere in the title (e.g. plain "001", "123.")
+  let m4 = title.match(/(\d+)/);
+  if(m4) return parseInt(m4[1]);
   return Infinity;
 }
 function renderToc(){
@@ -2036,6 +2325,202 @@ function initSwatches(){
   const wrap=document.getElementById("colorSwatches");if(!wrap)return;wrap.innerHTML="";
   COVER_COLORS.forEach(c=>{const s=document.createElement("div");s.className="swatch"+(c===selectedColor?" selected":"");s.style.background=c;s.onclick=()=>{selectedColor=c;initSwatches();};wrap.appendChild(s);});
 }
+// ══ Novel tags ══
+const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
+let tagState={add:[],edit:[]};
+function renderTagUI(mode){
+  const presetWrap=document.getElementById(mode==='add'?'addTagPresets':'editTagPresets');
+  const chipWrap=document.getElementById(mode==='add'?'addTagChips':'editTagChips');
+  if(!presetWrap||!chipWrap)return;
+  const tags=tagState[mode];
+  presetWrap.innerHTML='';
+  PRESET_TAGS.forEach(t=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='theme-btn'+(tags.includes(t)?' active':'');
+    btn.textContent=t;
+    btn.onclick=()=>toggleTag(mode,t);
+    presetWrap.appendChild(btn);
+  });
+  chipWrap.innerHTML='';
+  const customTags=tags.filter(t=>!PRESET_TAGS.includes(t));
+  if(customTags.length===0 && tags.length===0){
+    const hint=document.createElement('span');
+    hint.style.cssText='font-size:12px;color:var(--ink-3)';
+    hint.textContent='尚未選擇標籤';
+    chipWrap.appendChild(hint);
+  }
+  customTags.forEach(t=>{
+    const chip=document.createElement('span');
+    chip.className='tag-chip';
+    chip.textContent=t+' ✕';
+    chip.onclick=()=>toggleTag(mode,t);
+    chipWrap.appendChild(chip);
+  });
+}
+function toggleTag(mode,t){
+  const arr=tagState[mode];
+  const i=arr.indexOf(t);
+  if(i>=0) arr.splice(i,1); else arr.push(t);
+  renderTagUI(mode);
+}
+function addCustomTag(mode){
+  const inp=document.getElementById(mode==='add'?'addTagInput':'editTagInput');
+  const val=inp.value.trim();
+  if(!val)return;
+  if(!tagState[mode].includes(val)) tagState[mode].push(val);
+  inp.value='';
+  renderTagUI(mode);
+}
+
+// ══ Full-text search (across all novels) ══
+let searchDebounceT=null;
+function openSearchModal(){
+  openModal('searchModal');
+  const inp=document.getElementById('searchInput');
+  document.getElementById('searchResults').innerHTML='';
+  document.getElementById('searchStatus').textContent='輸入關鍵字開始搜尋';
+  inp.value='';
+  setTimeout(()=>inp.focus(),100);
+}
+function debounceSearch(){
+  clearTimeout(searchDebounceT);
+  searchDebounceT=setTimeout(performSearch,250);
+}
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// 依關鍵字長度決定容許幾個字的誤差（太短的關鍵字不做容錯，避免誤判過多）
+function calcMaxErrors(qLen){
+  if(qLen<=1) return 0;
+  if(qLen<=4) return 1;
+  if(qLen<=7) return 2;
+  return 3;
+}
+const FUZZY_MAX_TEXT_LEN=20000; // 超過這個長度的內文，只做精確比對，跳過容錯比對以避免卡頓
+// 在文字裡找關鍵字：先試精確比對（快），找不到才試容錯比對（允許打錯字/漏字/多字）
+// 回傳 {exact, startIdx, endIdx} 或 null（完全找不到）
+function fuzzyFind(text, query, maxErrors){
+  if(!text || !query) return null;
+  const tLower=text.toLowerCase(), qLower=query.toLowerCase();
+  const exactIdx=tLower.indexOf(qLower);
+  if(exactIdx>=0) return {exact:true, startIdx:exactIdx, endIdx:exactIdx+query.length};
+  if(maxErrors<=0 || text.length>FUZZY_MAX_TEXT_LEN) return null;
+  // 自由起點的有界編輯距離（bounded Levenshtein，允許取代/插入/刪除），滾動陣列節省記憶體
+  const n=text.length, m=query.length;
+  let prev=new Array(m+1);
+  for(let i=0;i<=m;i++) prev[i]=i;
+  for(let j=1;j<=n;j++){
+    const curr=new Array(m+1);
+    curr[0]=0;
+    const tc=tLower.charCodeAt(j-1);
+    for(let i=1;i<=m;i++){
+      const cost=qLower.charCodeAt(i-1)===tc?0:1;
+      let v=prev[i-1]+cost;               // 取代
+      const del=prev[i]+1; if(del<v)v=del; // 刪除（關鍵字裡多的字）
+      const ins=curr[i-1]+1; if(ins<v)v=ins;// 插入（關鍵字裡少的字）
+      curr[i]=v;
+    }
+    if(curr[m]<=maxErrors){
+      const approxStart=Math.max(0,j-m-maxErrors);
+      return {exact:false, startIdx:approxStart, endIdx:j};
+    }
+    prev=curr;
+  }
+  return null;
+}
+// 依比對結果，取前後一小段當作預覽片段，並把命中範圍用 <mark> 標起來
+function buildSnippet(text,match){
+  const {startIdx,endIdx}=match;
+  const start=Math.max(0,startIdx-25);
+  const end=Math.min(text.length,endIdx+45);
+  const before=escapeHtml(text.substring(start,startIdx));
+  const hit=escapeHtml(text.substring(startIdx,endIdx));
+  const after=escapeHtml(text.substring(endIdx,end));
+  return (start>0?'…':'')+before+'<mark>'+hit+'</mark>'+after+(end<text.length?'…':'');
+}
+const SEARCH_MAX_RESULTS=100;
+function performSearch(){
+  const query=document.getElementById('searchInput').value.trim();
+  const statusEl=document.getElementById('searchStatus');
+  const resultsEl=document.getElementById('searchResults');
+  resultsEl.innerHTML='';
+  if(!query){ statusEl.textContent='輸入關鍵字開始搜尋'; return; }
+  statusEl.textContent='搜尋中...';
+  const maxErrors=calcMaxErrors(query.length);
+  const results=[]; // {novelIdx, chapIdx, novelName, author, chapTitle, snippetHtml, exact}
+  for(let ni=0; ni<novels.length && results.length<SEARCH_MAX_RESULTS; ni++){
+    const n=novels[ni];
+    const nameMatch=fuzzyFind(n.name||'', query, maxErrors);
+    const authorMatch=fuzzyFind(n.author||'', query, maxErrors);
+    let anyChapMatch=false;
+    for(let ci=0; ci<n.chapters.length && results.length<SEARCH_MAX_RESULTS; ci++){
+      const c=n.chapters[ci];
+      const titleMatch=fuzzyFind(c.title||'', query, maxErrors);
+      const contentMatch=fuzzyFind(c.content||'', query, maxErrors);
+      if(titleMatch || contentMatch){
+        anyChapMatch=true;
+        results.push({
+          novelIdx:ni, chapIdx:ci,
+          novelName:n.name||'未命名小說', author:n.author||'',
+          chapTitle:c.title||`第${ci+1}章`,
+          snippetHtml: contentMatch ? buildSnippet(c.content||'', contentMatch) : '',
+          exact: (titleMatch?titleMatch.exact:true) && (contentMatch?contentMatch.exact:true)
+        });
+      }
+    }
+    // 如果整本都沒有任何章節符合，但書名/作者符合，也列出來（點進去開書籍詳情頁）
+    if((nameMatch||authorMatch) && !anyChapMatch){
+      results.unshift({novelIdx:ni, chapIdx:-1, novelName:n.name||'未命名小說', author:n.author||'', chapTitle:'', snippetHtml:'', exact:(nameMatch?nameMatch.exact:true)&&(authorMatch?authorMatch.exact:true)});
+    }
+  }
+  if(results.length===0){
+    statusEl.textContent=`沒有找到符合「${query}」的結果（已含容錯比對）`;
+    return;
+  }
+  statusEl.textContent=`找到 ${results.length}${results.length>=SEARCH_MAX_RESULTS?'+':''} 筆結果`+(results.length>=SEARCH_MAX_RESULTS?'（僅顯示前 '+SEARCH_MAX_RESULTS+' 筆）':'');
+  results.forEach(r=>{
+    const item=document.createElement('div');
+    item.className='search-result-item';
+    const titleRow=document.createElement('div');
+    titleRow.className='search-result-title';
+    titleRow.textContent='📖 '+r.novelName+(r.author?'（'+r.author+'）':'');
+    if(!r.exact){
+      const badge=document.createElement('span');
+      badge.style.cssText='font-size:10px;background:var(--paper-3);color:var(--ink-3);padding:1px 6px;border-radius:8px';
+      badge.textContent='≈ 近似符合';
+      titleRow.appendChild(badge);
+    }
+    item.appendChild(titleRow);
+    if(r.chapIdx>=0){
+      const chapRow=document.createElement('div');
+      chapRow.className='search-result-chap';
+      chapRow.textContent='→ '+r.chapTitle;
+      item.appendChild(chapRow);
+    }
+    if(r.snippetHtml){
+      const snip=document.createElement('div');
+      snip.className='search-result-snippet';
+      snip.innerHTML=r.snippetHtml;
+      item.appendChild(snip);
+    }
+    item.onclick=()=>jumpToSearchResult(r.novelIdx, r.chapIdx);
+    resultsEl.appendChild(item);
+  });
+}
+function jumpToSearchResult(novelIdx, chapIdx){
+  closeModal('searchModal');
+  if(chapIdx<0){ showDetail(novelIdx); return; }
+  activeNovel=novelIdx;
+  const n=novels[novelIdx];
+  n.lastOpenedAt=Date.now();
+  persist();
+  document.getElementById('novelTitleBar').textContent=n.name;
+  showView('viewNovel');
+  renderToc();
+  loadChapter(chapIdx);
+}
+
 function openAddModal(){
   try{
     selectedColor=COVER_COLORS[Math.floor(Math.random()*COVER_COLORS.length)];
@@ -2046,6 +2531,8 @@ function openAddModal(){
     const pw=document.getElementById("coverImgPreviewWrap");if(pw)pw.style.display="none";
     const pp=document.getElementById("coverImgPlaceholder");if(pp)pp.style.display="inline";
     const pf=document.getElementById("coverImgFile");if(pf)pf.value="";
+    tagState.add=[];
+    renderTagUI('add');
   }catch(e){console.error("openAddModal error:",e);}
   openModal("addModal");
 }
@@ -2073,6 +2560,8 @@ function openEditNovelModal(idx){
   // color swatches
   selectedColor=n.color||COVER_COLORS[0];
   initEditSwatches();
+  tagState.edit=[...(n.tags||[])];
+  renderTagUI('edit');
   openModal("editNovelModal");
 }
 function handleEditCoverImg(inp){
@@ -2097,6 +2586,7 @@ function confirmEditNovel(){
   n.name=document.getElementById("editNovelName").value.trim()||n.name;
   n.author=document.getElementById("editNovelAuthor").value.trim();
   n.color=selectedColor;
+  n.tags=[...tagState.edit];
   if(pendingEditCoverImg!==undefined) n.coverImg=pendingEditCoverImg;
   persist();closeModal("editNovelModal");renderShelf();showToast("✅ 已更新書籍資訊");
 }
@@ -2116,12 +2606,14 @@ function initEditSwatches(){
 }
 function confirmAddNovel(){
   const name=document.getElementById("addName").value.trim();if(!name){alert("請輸入小說名稱");return;}
-  novels.push({name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null});
+  novels.push({name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null,tags:[...tagState.add]});
   persist();closeModal("addModal");renderShelf();
   showToast("📚 「"+name+"」已新增！");
-  // Go to detail page so user can add chapters
+  // 書籍已經建立好了；接著直接跳出新增章節視窗，方便馬上加第一章，
+  // 不想加的話直接關掉視窗即可，書籍依然保留（沒有章節也沒關係）。
   const newIdx = novels.length - 1;
   showDetail(newIdx);
+  openChapterModal(newIdx);
 }
 
 // Chapter modal
@@ -2313,11 +2805,29 @@ function applySettings(){
   // reading content gets full size
   document.querySelectorAll(".pane-content").forEach(el=>{el.style.fontSize=settings.fontSize+"px";el.style.lineHeight=settings.lineH;});
 }
+// Firebase Firestore 免費（Spark）方案總儲存空間上限，約 1 GiB
+const FB_FREE_LIMIT_BYTES = 1024*1024*1024;
+function formatBytes(bytes){
+  if(bytes>=1024*1024*1024) return (bytes/1024/1024/1024).toFixed(2)+"GB";
+  if(bytes>=1024*1024) return (bytes/1024/1024).toFixed(2)+"MB";
+  return (bytes/1024).toFixed(1)+"KB";
+}
 function updateStorageInfo(){
   document.getElementById("storageNovelCount").textContent=novels.length;
-  try{const bytes=new Blob([localStorage.getItem("nr3")||""]).size;document.getElementById("storageSize").textContent=(bytes/1024).toFixed(1)+"KB";}catch(e){}
+  try{
+    const bytes=new Blob([JSON.stringify(novels)]).size;
+    document.getElementById("storageSize").textContent=formatBytes(bytes);
+    const remainEl=document.getElementById("storageRemain");
+    const barEl=document.getElementById("storageBar");
+    if(remainEl){
+      const pct=Math.min(100,(bytes/FB_FREE_LIMIT_BYTES)*100);
+      const remainBytes=Math.max(0,FB_FREE_LIMIT_BYTES-bytes);
+      remainEl.textContent=`Firebase 免費方案剩餘空間約 ${formatBytes(remainBytes)}（已用 ${pct.toFixed(2)}%，上限 1GB）`;
+      if(barEl) barEl.style.width=pct.toFixed(1)+"%";
+    }
+  }catch(e){}
 }
-function clearAll(){showConfirm("確定清除所有小說資料？此操作不可復原！",()=>{localStorage.removeItem("nr3");novels=[];renderShelf();showToast("已清除所有資料");});}
+function clearAll(){showConfirm("確定清除所有小說資料？此操作不可復原！",()=>{idbDelete('novels');localStorage.removeItem("nr3");novels=[];renderShelf();showToast("已清除所有資料");});}
 
 // ══ Firebase Sync ══
 let fbApp=null, fbUser=null;
@@ -2372,15 +2882,67 @@ function loadFirebaseSDK(cfg){
   initFirebaseApp(cfg);
 }
 
-// Hash password to generate stable user ID (no auth needed)
-async function hashPassword(pw){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('novel_reader_v1:'+pw));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
 // ── Firestore REST API (no WebSocket, works with file://) ──
 let fsProjectId = null;
 let fsApiKey = null;
+
+// ── Firebase Authentication（Identity Toolkit REST，不需要 SDK）──
+let fsIdToken = null, fsRefreshToken = null, fsTokenExpireAt = 0;
+
+async function fsSignUp(email, pw){
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${fsApiKey}`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email, password:pw, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error?.message || '註冊失敗');
+  return d;
+}
+
+async function fsSignIn(email, pw){
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fsApiKey}`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({email, password:pw, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error?.message || '登入失敗');
+  return d;
+}
+
+async function fsRefreshIdToken(){
+  if(!fsRefreshToken) throw new Error('登入已過期，請重新輸入密碼連線');
+  const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${fsApiKey}`,{
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(fsRefreshToken)}`
+  });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error?.message || 'token 更新失敗，請重新連線');
+  fsIdToken = d.id_token;
+  fsRefreshToken = d.refresh_token;
+  fsTokenExpireAt = Date.now() + (parseInt(d.expires_in)*1000) - 60000; // 提早1分鐘視為過期
+  saveFbSession();
+  return fsIdToken;
+}
+
+function saveFbSession(){
+  try{
+    localStorage.setItem('nr3_fbsession', JSON.stringify({
+      uid: fbUser?.uid || null,
+      idToken: fsIdToken,
+      refreshToken: fsRefreshToken,
+      expireAt: fsTokenExpireAt
+    }));
+  }catch(e){}
+}
+function loadFbSession(){
+  try{ return JSON.parse(localStorage.getItem('nr3_fbsession')||'null'); }catch(e){ return null; }
+}
+async function ensureFreshToken(){
+  if(!fsIdToken || Date.now() >= fsTokenExpireAt){
+    await fsRefreshIdToken();
+  }
+  return fsIdToken;
+}
 
 function fsRestBase(){
   return `https://firestore.googleapis.com/v1/projects/${fsProjectId}/databases/(default)/documents`;
@@ -2441,9 +3003,10 @@ async function fsRestGet(path){
   if(!fsApiKey || !fsProjectId){
     throw new Error('請先儲存 Firebase 設定並輸入密碼連線');
   }
-  const url=`${fsRestBase()}/${path}?key=${fsApiKey}`;
+  await ensureFreshToken();
+  const url=`${fsRestBase()}/${path}`;
   console.log('fsRestGet URL:', url.slice(0,80)+'...');
-  const r=await fetch(url);
+  const r=await fetch(url, {headers:{'Authorization':'Bearer '+fsIdToken}});
   console.log('fsRestGet status:', r.status, path);
   if(r.status===404) return null;
   if(r.status===403){
@@ -2459,11 +3022,11 @@ async function fsRestGet(path){
 
 // REST: SET document (patch = create or overwrite)
 async function fsRestSet(path, data){
-  const url=`${fsRestBase()}/${path}?key=${fsApiKey}`;
-  console.log('fsRestSet URL:', url.replace(fsApiKey,'***'));
+  await ensureFreshToken();
+  const url=`${fsRestBase()}/${path}`;
   const body=toFsFields(data);
   console.log('fsRestSet fields:', Object.keys(body.fields||{}));
-  const r=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r=await fetch(url,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+fsIdToken},body:JSON.stringify(body)});
   console.log('fsRestSet status:', r.status, path);
   if(!r.ok){
     const e=await r.json();
@@ -2475,8 +3038,9 @@ async function fsRestSet(path, data){
 
 // REST: LIST documents in collection
 async function fsRestList(path){
-  const url=`${fsRestBase()}/${path}?key=${fsApiKey}&pageSize=500`;
-  const r=await fetch(url);
+  await ensureFreshToken();
+  const url=`${fsRestBase()}/${path}?pageSize=500`;
+  const r=await fetch(url, {headers:{'Authorization':'Bearer '+fsIdToken}});
   if(r.status===404) return [];
   if(!r.ok){const e=await r.json();throw new Error(e.error?.message||r.statusText);}
   const d=await r.json();
@@ -2485,8 +3049,9 @@ async function fsRestList(path){
 
 // REST: DELETE document
 async function fsRestDelete(path){
-  const url=`${fsRestBase()}/${path}?key=${fsApiKey}`;
-  const r=await fetch(url,{method:'DELETE'});
+  await ensureFreshToken();
+  const url=`${fsRestBase()}/${path}`;
+  const r=await fetch(url,{method:'DELETE', headers:{'Authorization':'Bearer '+fsIdToken}});
   if(!r.ok && r.status!==404){const e=await r.json();throw new Error(e.error?.message||r.statusText);}
 }
 
@@ -2500,13 +3065,18 @@ function initFirebaseApp(cfg){
       return;
     }
     document.getElementById('fbLoginSection').style.display = 'block';
-    const savedUid = localStorage.getItem('nr3_fbuid');
-    if(savedUid){
-      fbUser = { uid: savedUid };
+    const savedEmail = localStorage.getItem('nr3_fbemail');
+    if(savedEmail){ const emEl=document.getElementById('fbEmail'); if(emEl) emEl.value = savedEmail; }
+    const session = loadFbSession();
+    if(session && session.uid && session.refreshToken){
+      fbUser = { uid: session.uid };
+      fsIdToken = session.idToken;
+      fsRefreshToken = session.refreshToken;
+      fsTokenExpireAt = session.expireAt || 0;
       setFbLoggedIn(true);
-      setFbStatus('✅ 已連線（密碼已記住）');
+      setFbStatus('✅ 已連線（登入已記住）');
     } else {
-      setFbStatus('設定載入完成，請輸入密碼連線');
+      setFbStatus('設定載入完成，請輸入 Email 與密碼連線');
     }
   } catch(e){
     setFbStatus('初始化失敗：' + e.message, true);
@@ -2523,21 +3093,42 @@ function fsServerTimestamp(){ return new Date().toISOString(); }
 function fbLogin(){
   console.log('fbLogin called, fsProjectId=', fsProjectId, 'fbUser=', fbUser);
   if(!fsProjectId){ setFbStatus('請先儲存 Firebase 設定 (fsProjectId是空的)', true); return; }
+  const email = document.getElementById('fbEmail').value.trim();
   const pw = document.getElementById('fbPassword').value.trim();
-  if(!pw){ setFbStatus('請輸入密碼', true); return; }
+  if(!email || !pw){ setFbStatus('請輸入 Email 與密碼', true); return; }
   setFbStatus('連線中...');
-  hashPassword(pw).then(uid=>{
-    fbUser = { uid };
-    localStorage.setItem('nr3_fbuid', uid);
-    setFbLoggedIn(true);
-    setFbStatus('✅ 已連線！識別碼：' + uid.slice(0,8) + '...');
-    document.getElementById('fbPassword').value = '';
-  }).catch(e=> setFbStatus('連線失敗：'+e.message, true));
+  fsSignIn(email, pw).then(d=>onAuthSuccess(d, email)).catch(e=>{
+    // 帳號不存在（或第一次使用）就自動註冊
+    fsSignUp(email, pw).then(d=>onAuthSuccess(d, email)).catch(e2=>{
+      if(/EMAIL_EXISTS/.test(e2.message)){
+        setFbStatus('連線失敗：密碼錯誤', true);
+      } else {
+        setFbStatus('連線失敗：'+e2.message, true);
+      }
+    });
+  });
+}
+
+function onAuthSuccess(d, email){
+  fbUser = { uid: d.localId };
+  fsIdToken = d.idToken;
+  fsRefreshToken = d.refreshToken;
+  fsTokenExpireAt = Date.now() + (parseInt(d.expiresIn)*1000) - 60000;
+  localStorage.setItem('nr3_fbuid', d.localId);
+  localStorage.setItem('nr3_fbemail', email);
+  saveFbSession();
+  setFbLoggedIn(true);
+  setFbStatus('✅ 已連線！識別碼：' + d.localId.slice(0,8) + '...');
+  document.getElementById('fbPassword').value = '';
 }
 
 function fbLogout(){
   fbUser = null;
+  fsIdToken = null;
+  fsRefreshToken = null;
+  fsTokenExpireAt = 0;
   localStorage.removeItem('nr3_fbuid');
+  localStorage.removeItem('nr3_fbsession');
   setFbLoggedIn(false);
   setFbStatus('已中斷連線');
 }
@@ -2549,6 +3140,17 @@ function setFbLoggedIn(yes){
   document.getElementById('btnFbBackup').style.display  = yes?'inline-flex':'none';
   document.getElementById('btnFbRestore').style.display = yes?'inline-flex':'none';
   document.getElementById('btnFbLogout').style.display  = yes?'inline-flex':'none';
+  const asRow = document.getElementById('autoSyncRow');
+  if(asRow){
+    asRow.style.display = yes?'flex':'none';
+    if(yes){
+      const asToggle = document.getElementById('autoSyncToggle');
+      if(asToggle) asToggle.checked = localStorage.getItem('nr3_autosync') !== 'off';
+    }
+  }
+}
+function toggleAutoSync(checked){
+  localStorage.setItem('nr3_autosync', checked?'on':'off');
 }
 
 function setFbStatus(msg, isErr){
@@ -2592,23 +3194,138 @@ async function deleteCol(colPath){
   }
 }
 
-async function fbBackup(){
-  if(!fbUser || !fsProjectId){ showToast('請先輸入密碼連線'); return; }
-  const uid = fbUser.uid;
-  const totalChaps = novels.reduce((s,n)=>s+n.chapters.length,0);
-  let done = 0;
+// ── 變更偵測用的簡易 hash（非加密用途，只用來判斷內容是否變動）──
+function hashStr(str){
+  let h=5381;
+  for(let i=0;i<str.length;i++){ h=((h<<5)+h+str.charCodeAt(i))|0; }
+  return (h>>>0).toString(36);
+}
+function loadSyncMeta(){
+  try{ return JSON.parse(localStorage.getItem('nr3_fbsyncmeta')||'{"novels":[]}'); }catch(e){ return {novels:[]}; }
+}
+function saveSyncMeta(m){
+  try{ localStorage.setItem('nr3_fbsyncmeta', JSON.stringify(m)); }catch(e){}
+}
+function novelMetaHash(n){
+  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,scrollPct:n.scrollPct||0,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[]}));
+}
+function chapterHash(c){
+  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||''));
+}
 
-  // Show progress overlay
+// auto=true 時為背景自動同步：不顯示遮罩、不彈確認，只有真的有變更才會顯示提示
+function loadReadTimeSyncedSnapshot(){
+  try{ return JSON.parse(localStorage.getItem('nr3_readtime_synced')||'{}'); }catch(e){ return {}; }
+}
+function saveReadTimeSyncedSnapshot(d){
+  try{ localStorage.setItem('nr3_readtime_synced', JSON.stringify(d)); }catch(e){}
+}
+
+async function fbBackup(auto){
+  if(!fbUser || !fsProjectId){ if(!auto) showToast('請先輸入密碼連線'); return; }
+  const uid = fbUser.uid;
+  const syncMeta = loadSyncMeta();
+  const oldNovels = syncMeta.novels || [];
+
   const overlay = document.getElementById('batchOverlay');
   const bar     = document.getElementById('batchBar');
   const msg     = document.getElementById('batchMsg');
-  overlay.style.display = 'flex';
-  msg.textContent = '連線中...';
-  bar.style.width = '0%';
+  if(!auto){ overlay.style.display='flex'; msg.textContent='比對雲端與本地差異...'; bar.style.width='0%'; }
 
   try {
-    // 1. Save global meta
-    msg.textContent = '儲存設定...';
+    // 0. 讀取雲端目前的 meta（含閱讀時間），準備跟本地做合併，而不是互相覆蓋
+    const remoteMetaDoc = await fsRestGet(`users/${uid}`);
+    const remoteMeta = fromFsDoc(remoteMetaDoc) || {};
+    const remoteReadTime = remoteMeta.readTime || {};
+
+    // 閱讀時間用「差量」合併：本地這次比上次同步後多出來的時間，加到雲端目前的總數上，
+    // 這樣多台裝置各自累積的時間會加總，而不會互相覆蓋掉對方的紀錄
+    const localReadTimeRaw = loadReadTimeData();
+    const localReadTime = {...localReadTimeRaw};
+    if(readingTimerStart){ const k=todayKey(); localReadTime[k]=(localReadTime[k]||0)+(Date.now()-readingTimerStart); }
+    const lastSynced = loadReadTimeSyncedSnapshot();
+    const mergedReadTime = {...remoteReadTime};
+    let readTimeChanged=false;
+    for(const day of Object.keys(localReadTime)){
+      const delta = Math.max(0, (localReadTime[day]||0) - (lastSynced[day]||0));
+      if(delta>0){ mergedReadTime[day]=(mergedReadTime[day]||0)+delta; readTimeChanged=true; }
+    }
+
+    // 1. 比對出真正有變動的項目（新增/修改/刪除），而不是整本刪除重傳
+    const maxLen = Math.max(novels.length, oldNovels.length);
+    const tasks = [];
+    const newNovelMeta = oldNovels.slice();
+    for(let ni=0; ni<maxLen; ni++){
+      if(ni >= novels.length){
+        tasks.push({type:'deleteNovel', ni});
+        newNovelMeta[ni] = null;
+        continue;
+      }
+      const n = novels[ni];
+      const old = oldNovels[ni] || {metaHash:null, chapterHashes:[]};
+      const mHash = novelMetaHash(n);
+      if(mHash !== old.metaHash) tasks.push({type:'novelMeta', ni});
+
+      const oldChapHashes = old.chapterHashes || [];
+      const maxCh = Math.max(n.chapters.length, oldChapHashes.length);
+      const chapterHashes = [];
+      for(let ci=0; ci<maxCh; ci++){
+        if(ci >= n.chapters.length){ tasks.push({type:'deleteChapter', ni, ci}); continue; }
+        const cHash = chapterHash(n.chapters[ci]);
+        chapterHashes[ci] = cHash;
+        if(cHash !== oldChapHashes[ci]) tasks.push({type:'chapter', ni, ci});
+      }
+      newNovelMeta[ni] = {metaHash:mHash, chapterHashes};
+    }
+
+    if(tasks.length===0 && !readTimeChanged){
+      // 就算完全沒東西要「推」上去，雲端的閱讀時間仍可能因為其他裝置而更新過，順手拉回本地
+      if(JSON.stringify(mergedReadTime)!==JSON.stringify(localReadTimeRaw)){
+        saveReadTimeData(mergedReadTime);
+        saveReadTimeSyncedSnapshot(mergedReadTime);
+        renderReadingStats();
+      }
+      if(!auto) overlay.style.display='none';
+      setFbStatus('✅ 已是最新，沒有變更（' + new Date().toLocaleString('zh-TW') + '）');
+      if(!auto) showToast('☁ 沒有變更，已經是最新');
+      return;
+    }
+
+    // 2. 只上傳/刪除真正變動的部分
+    let done=0;
+    const total=tasks.length;
+    for(const t of tasks){
+      if(t.type==='deleteNovel'){
+        if(!auto) msg.textContent = `移除已刪除的小說 ${t.ni+1}...`;
+        await deleteCol(`users/${uid}/novels/n${t.ni}/chapters`);
+        await fsRestDelete(`users/${uid}/novels/n${t.ni}`);
+      } else if(t.type==='novelMeta'){
+        const n=novels[t.ni];
+        if(!auto) msg.textContent = `更新《${n.name}》資訊...`;
+        await fsRestSet(`users/${uid}/novels/n${t.ni}`, {
+          idx: t.ni, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
+          converted:n.converted||false, scrollPct:n.scrollPct||0, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
+          chapterCount:n.chapters.length, tags:n.tags||[],
+        });
+      } else if(t.type==='chapter'){
+        const n=novels[t.ni], c=n.chapters[t.ci];
+        if(!auto) msg.textContent = `${n.name} — 章節 ${t.ci+1}/${n.chapters.length}`;
+        const content     = await compressText(c.content     || '');
+        const origin      = await compressText(c.origin      || '');
+        const origContent = await compressText(c.origContent || '');
+        const origOrigin  = await compressText(c.origOrigin  || '');
+        await fsRestSet(`users/${uid}/novels/n${t.ni}/chapters/c${t.ci}`, {
+          idx: t.ci, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
+        });
+      } else if(t.type==='deleteChapter'){
+        if(!auto) msg.textContent = `刪除已移除的章節 ${t.ci+1}...`;
+        await fsRestDelete(`users/${uid}/novels/n${t.ni}/chapters/c${t.ci}`);
+      }
+      done++;
+      if(!auto) bar.style.width = ((done/total)*100)+'%';
+    }
+
+    // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間
     await fsRestSet(`users/${uid}`, {
       version: 4,
       timestamp: new Date().toISOString(),
@@ -2617,67 +3334,31 @@ async function fbBackup(){
       apiKey:   localStorage.getItem('nr3_apikey')||'',
       fbConfig: localStorage.getItem('nr3_fbconfig')||'',
       novelCount: novels.length,
+      readTime: mergedReadTime,
       updatedAt: new Date().toISOString()
     });
 
-    // 2. Delete old novels/chapters
-    msg.textContent = '清除舊資料...';
-    for(let i=0; i<30; i++){
-      await deleteCol(`users/${uid}/novels/n${i}/chapters`);
-    }
-    await deleteCol(`users/${uid}/novels`);
+    // 寫入成功後才把「已同步」快照更新掉，避免中途失敗導致本地時間被誤判成已同步
+    saveReadTimeData(mergedReadTime);
+    saveReadTimeSyncedSnapshot(mergedReadTime);
+    renderReadingStats();
 
-    // 3. Write each novel + chapters separately
-    for(let ni=0; ni<novels.length; ni++){
-      const n = novels[ni];
-      // Novel info (no chapters content)
-      await fsRestSet(`users/${uid}/novels/n${ni}`, {
-        idx: ni,
-        name:      n.name      || '',
-        author:    n.author    || '',
-        color:     n.color     || '',
-        coverImg:  n.coverImg  || null,
-        converted: n.converted || false,
-        scrollPct: n.scrollPct || 0,
-        bookmarks: n.bookmarks || [],
-        lastRead:  n.lastRead  || null,
-        chapterCount: n.chapters.length,
-      });
+    saveSyncMeta({novels:newNovelMeta.filter((_,i)=>i<novels.length)});
 
-      // Each chapter as its own doc — split content if > 900KB
-      for(let ci=0; ci<n.chapters.length; ci++){
-        const c = n.chapters[ci];
-        msg.textContent = `${n.name} — 章節 ${ci+1}/${n.chapters.length}`;
-        bar.style.width = ((done / Math.max(totalChaps,1)) * 100) + '%';
-
-        // Compress all text fields
-        const content     = await compressText(c.content     || '');
-        const origin      = await compressText(c.origin      || '');
-        const origContent = await compressText(c.origContent || '');
-        const origOrigin  = await compressText(c.origOrigin  || '');
-
-        await fsRestSet(`users/${uid}/novels/n${ni}/chapters/c${ci}`, {
-          idx:        ci,
-          title:      c.title || '',
-          compressed: true,
-          content,
-          origin,
-          origContent,
-          origOrigin,
-        });
-        done++;
-      }
-    }
-
-    bar.style.width = '100%';
     const ts = new Date().toLocaleString('zh-TW');
-    msg.textContent = '備份完成！' + ts;
-    setTimeout(()=>{ overlay.style.display='none'; }, 1200);
-    setFbStatus('✅ 備份成功！' + ts);
-    showToast('☁ 備份成功！');
+    const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : '更新閱讀時間';
+    if(!auto){
+      bar.style.width = '100%';
+      msg.textContent = '同步完成！' + ts;
+      setTimeout(()=>{ overlay.style.display='none'; }, 1200);
+      showToast(`☁ 同步成功！（${summary}）`);
+    } else {
+      showToast(`☁ 自動同步完成（${summary}）`);
+    }
+    setFbStatus('✅ 同步成功！' + ts);
   } catch(e){
-    overlay.style.display = 'none';
-    setFbStatus('備份失敗：' + e.message, true);
+    if(!auto) overlay.style.display = 'none';
+    setFbStatus('同步失敗：' + e.message, true);
     console.error(e);
   }
 }
@@ -2770,12 +3451,15 @@ async function _doRestore(){
         scrollPct: nData.scrollPct || 0,
         bookmarks: nData.bookmarks || [],
         lastRead:  nData.lastRead  || null,
+        tags:      nData.tags      || [],
         chapters,
       });
     }
 
     novels = restoredNovels;
     persist();
+    fbDirty = false;
+    saveSyncMeta({novels: novels.map(n=>({metaHash:novelMetaHash(n), chapterHashes:n.chapters.map(chapterHash)}))});
     bar.style.width = '90%';
     msg.textContent = '套用設定...';
 
@@ -2788,6 +3472,18 @@ async function _doRestore(){
     }
     if(meta.userDict) localStorage.setItem('nr3_dict',    meta.userDict);
     if(meta.apiKey)   localStorage.setItem('nr3_apikey',  meta.apiKey);
+
+    // 閱讀時間：跟本地既有紀錄取每天的較大值合併，而不是直接覆蓋掉本地已經累積的時間
+    if(meta.readTime){
+      const localRT = loadReadTimeData();
+      const mergedRT = {...localRT};
+      for(const day of Object.keys(meta.readTime)){
+        mergedRT[day] = Math.max(mergedRT[day]||0, meta.readTime[day]||0);
+      }
+      saveReadTimeData(mergedRT);
+      saveReadTimeSyncedSnapshot(mergedRT);
+      renderReadingStats();
+    }
 
     bar.style.width = '100%';
     const ts = meta.timestamp ? new Date(meta.timestamp).toLocaleString('zh-TW') : '未知';
@@ -2804,9 +3500,24 @@ async function _doRestore(){
   }
 }
 
+// ── 背景自動同步：每 3 分鐘檢查一次，只有真的有本地變更(fbDirty)才會觸發，
+//    且 fbBackup 內部只會上傳/刪除真正變動的章節，不會整包重傳 ──
+const FB_AUTOSYNC_INTERVAL_MS = 3*60*1000;
+setInterval(()=>{
+  if(!fbUser || !fsProjectId) return;
+  if(localStorage.getItem('nr3_autosync')==='off') return;
+  if(!fbDirty) return;
+  fbDirty = false;
+  fbBackup(true).catch(e=>console.warn('auto sync failed', e));
+}, FB_AUTOSYNC_INTERVAL_MS);
+// 分頁被隱藏（切走/鎖屏）前也嘗試同步一次，避免變更留在本機太久沒上傳
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden' && fbUser && fsProjectId && fbDirty && localStorage.getItem('nr3_autosync')!=='off'){
+    fbDirty = false;
+    fbBackup(true).catch(e=>console.warn('auto sync failed', e));
+  }
+});
 
-// ════════════════════════════════════════
-// RAG (Retrieval-Augmented Generation)
 // 把小說切成小段，問問題時找最相關的段落
 // ════════════════════════════════════════
 
@@ -3185,8 +3896,8 @@ function selHighlight(cls){
 let toastT;function showToast(m){const e=document.getElementById("toast");e.textContent=m;e.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove("show"),2200);}
 
 // ══ Init ══
-function init(){
-  try{load();}catch(e){console.error("load error:",e);}
+async function init(){
+  try{await load();}catch(e){console.error("load error:",e);}
   try{renderShelf();}catch(e){console.error("shelf error:",e);}
   try{initFirebase();}catch(e){console.error("firebase init error:",e);}
   try{initBatchUpload();}catch(e){console.error("batch init error:",e);}
