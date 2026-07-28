@@ -351,6 +351,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 /* color swatches for book cover */
 .color-swatches{display:flex;gap:8px;flex-wrap:wrap}
 .swatch{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:.15s}
+.color-mark-btn{width:22px;height:22px;border-radius:50%;cursor:pointer;border:1px solid rgba(0,0,0,.15);padding:0;flex-shrink:0}
+.color-mark-btn:hover{transform:scale(1.15)}
 .swatch.selected{border-color:var(--ink);transform:scale(1.15)}
 .tag-chip{display:inline-flex;align-items:center;gap:4px;background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold);border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer}
 .tag-chip:hover{opacity:.75}
@@ -921,7 +923,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       </div>
       <div class="msection">
         <label>章節內容</label>
-        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;flex-wrap:wrap">
           <span style="font-size:12px;color:var(--ink-3)">插入圖片到游標位置：</span>
           <label style="cursor:pointer;background:var(--paper-2);border:1px solid var(--paper-3);border-radius:var(--radius);padding:4px 12px;font-size:12px;color:var(--ink-2);display:inline-flex;align-items:center;gap:4px">
             <input type="file" accept="image/*" id="inlineImgFile" multiple style="display:none" onchange="insertInlineImages(this)">
@@ -929,9 +931,20 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
           </label>
           <span style="font-size:11px;color:var(--ink-3)">（可多選）</span>
         </div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--ink-3)">選取文字套用顏色：</span>
+          <button type="button" class="color-mark-btn" style="background:#e53935" onclick="insertColorMarker('red')" title="紅"></button>
+          <button type="button" class="color-mark-btn" style="background:#1e88e5" onclick="insertColorMarker('blue')" title="藍"></button>
+          <button type="button" class="color-mark-btn" style="background:#f9a825" onclick="insertColorMarker('yellow')" title="黃"></button>
+          <button type="button" class="color-mark-btn" style="background:#43a047" onclick="insertColorMarker('green')" title="綠"></button>
+          <button type="button" class="color-mark-btn" style="background:#fb8c00" onclick="insertColorMarker('orange')" title="橘"></button>
+          <button type="button" class="color-mark-btn" style="background:#8e24aa" onclick="insertColorMarker('purple')" title="紫"></button>
+          <button type="button" class="btn-g btn-sm" style="font-size:11px;padding:3px 10px" onclick="clearColorMarker()">清除顏色</button>
+        </div>
         <textarea class="edit-textarea" id="chapContent" placeholder="在這裡輸入或貼上章節內容...
 
-圖片會以 [IMG:...] 標記插入，閱讀時自動顯示"></textarea>
+圖片會以 [IMG:...] 標記插入，閱讀時自動顯示
+選取文字後點顏色按鈕，會以 [COLOR:xxx]文字[/COLOR] 標記插入，閱讀時自動上色"></textarea>
       </div>
       <div class="msection">
         <div class="toggle-row">
@@ -2269,6 +2282,35 @@ function handleCoverImg(inp){
   });
 }
 
+// ── Inline color markers in content ──
+const CONTENT_COLORS = { red:'#e53935', blue:'#1e88e5', yellow:'#f9a825', green:'#43a047', orange:'#fb8c00', purple:'#8e24aa' };
+
+function insertColorMarker(color){
+  const ta = document.getElementById("chapContent");
+  const start = ta.selectionStart ?? ta.value.length;
+  const end   = ta.selectionEnd   ?? ta.value.length;
+  const before = ta.value.slice(0, start);
+  // 選取範圍內若已經有顏色標記，先清掉再套用新顏色，避免巢狀疊加
+  const selected = ta.value.slice(start, end).replace(/\[COLOR:\w+\]/g, "").replace(/\[\/COLOR\]/g, "");
+  const after  = ta.value.slice(end);
+  const wrapped = `[COLOR:${color}]${selected}[/COLOR]`;
+  ta.value = before + wrapped + after;
+  ta.focus();
+  ta.setSelectionRange(before.length, before.length + wrapped.length);
+}
+
+function clearColorMarker(){
+  const ta = document.getElementById("chapContent");
+  const start = ta.selectionStart ?? 0;
+  const end   = ta.selectionEnd   ?? ta.value.length;
+  const before = ta.value.slice(0, start);
+  const cleared = ta.value.slice(start, end).replace(/\[COLOR:\w+\]/g, "").replace(/\[\/COLOR\]/g, "");
+  const after  = ta.value.slice(end);
+  ta.value = before + cleared + after;
+  ta.focus();
+  ta.setSelectionRange(before.length, before.length + cleared.length);
+}
+
 // ── Inline images in content ──
 function insertInlineImages(inp){
   const files = Array.from(inp.files); if(!files.length) return;
@@ -2288,11 +2330,9 @@ function insertInlineImages(inp){
   inp.value=""; // reset so same file can be re-added
 }
 
-// ── Render mixed text+image content ──
-function renderContent(el, raw){
-  if(!raw){ el.innerHTML=""; return; }
-  const parts = raw.split(/(\[IMG:[^\]]+\])/);
-  el.innerHTML = "";
+// ── Render mixed text+image+color content ──
+function renderContentSegment(target, text){
+  const parts = text.split(/(\[IMG:[^\]]+\])/);
   parts.forEach(part => {
     const m = part.match(/^\[IMG:(.+)\]$/);
     if(m){
@@ -2300,15 +2340,30 @@ function renderContent(el, raw){
       img.src = m[1];
       img.style.cssText = "max-width:100%;border-radius:6px;margin:16px 0;display:block";
       img.loading = "lazy";
-      el.appendChild(img);
+      target.appendChild(img);
     } else if(part){
       const span = document.createElement("span");
       span.style.whiteSpace = "pre-wrap";
       span.textContent = part;
-      el.appendChild(span);
+      target.appendChild(span);
     }
   });
+}
 
+function renderContent(el, raw){
+  if(!raw){ el.innerHTML=""; return; }
+  el.innerHTML = "";
+  const colorRe = /\[COLOR:(\w+)\]([\s\S]*?)\[\/COLOR\]/g;
+  let lastIndex = 0, match;
+  while((match = colorRe.exec(raw))){
+    if(match.index > lastIndex) renderContentSegment(el, raw.slice(lastIndex, match.index));
+    const wrap = document.createElement("span");
+    wrap.style.color = CONTENT_COLORS[match[1]] || match[1];
+    renderContentSegment(wrap, match[2]);
+    el.appendChild(wrap);
+    lastIndex = colorRe.lastIndex;
+  }
+  if(lastIndex < raw.length) renderContentSegment(el, raw.slice(lastIndex));
 }
 
 // appendChapNav removed (replaced by bottom bar)
