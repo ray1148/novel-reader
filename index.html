@@ -641,15 +641,50 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 </div>
 
 <!-- ══ SETTINGS VIEW ══ -->
-<div class="view" id="viewSettings">
+<div class="view" id="viewUserSettings">
   <div class="settings-page">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
-      <button class="back-btn" onclick="goShelf()">←</button>
-      <span style="font-size:16px;font-weight:600">設定</span>
+      <button class="back-btn" onclick="goSettings()">←</button>
+      <span style="font-size:16px;font-weight:600">使用者設定</span>
     </div>
 
     <div class="settings-section">
-      <div class="settings-title">AI 設定</div>
+      <div class="settings-title">☁ 雲端帳號同步</div>
+      <div style="font-size:13px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:12px;border-radius:var(--radius)">
+        使用 <strong>Google Firebase Firestore</strong>（免費方案完全夠用）同步資料，換手機也可以繼續閱讀。
+      </div>
+      <div class="msection">
+        <label style="font-size:13px;color:var(--ink-2);font-weight:500">Firebase 設定（JSON）</label>
+        <div id="fbConfigBody" style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <textarea class="panel-ta" id="fbConfigText" style="height:100px;font-family:monospace;font-size:11px" placeholder='{"apiKey":"...","projectId":"..."}'></textarea>
+          <button class="btn-p btn-sm" id="btnSaveFbConfig" onclick="saveFbConfig()">儲存設定</button>
+        </div>
+      </div>
+      <div class="msection" id="fbLoginSection" style="display:none">
+        <label style="font-size:13px;color:var(--ink-2)">帳號登入（所有裝置用同一組）</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input type="email" class="pinput" id="fbEmail" placeholder="Email..." style="font-size:13px">
+          <div style="display:flex;gap:8px">
+            <input type="password" class="pinput" id="fbPassword" placeholder="輸入密碼..." style="font-size:13px">
+            <button class="btn-p btn-sm" id="btnFbLogin" onclick="fbLogin()">連線</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--ink-3);line-height:1.6">※ 首次輸入的 Email+密碼會自動建立帳號，之後所有裝置輸入相同帳密即可同步。這是真正的 Firebase 帳號登入，請到 Firestore 規則設定：<code>allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;</code>（將 users/{uid} 的 uid 換成路徑變數名稱）。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="fbActions">
+          <button class="btn-g btn-sm" id="btnFbBackup" style="display:none" onclick="fbBackup()">▲ 同步到雲端</button>
+          <button class="btn-g btn-sm" id="btnFbRestore" style="display:none" onclick="fbRestore()">▼ 從雲端還原</button>
+          <button class="btn-g btn-sm" id="btnFbLogout" style="display:none" onclick="fbLogout()">中斷連線</button>
+        </div>
+        <div style="display:none;align-items:center;gap:8px;margin-top:6px" id="autoSyncRow">
+          <label class="sw" style="transform:scale(.8);flex-shrink:0"><input type="checkbox" id="autoSyncToggle" onchange="toggleAutoSync(this.checked)"><span class="sl"></span></label>
+          <span style="font-size:12px;color:var(--ink-3)">自動同步（背景每隔幾分鐘偵測變更並只上傳差異）</span>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--ink-3)" id="fbStatus"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-title">AI 服務</div>
       <div class="msection">
         <label style="font-size:13px;color:var(--ink-2);font-weight:600">選擇 AI 服務</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -711,6 +746,22 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         <span style="font-size:11px;color:var(--ink-3)" id="apiKeyStatus"></span>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="view" id="viewSettings">
+  <div class="settings-page">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+      <button class="back-btn" onclick="goShelf()">←</button>
+      <span style="font-size:16px;font-weight:600">設定</span>
+    </div>
+
+    <div class="settings-section">
+      <div class="setting-row" style="cursor:pointer;background:var(--paper-2);padding:12px;border-radius:var(--radius)" onclick="goUserSettings()">
+        <label style="cursor:pointer">使用者設定<span style="display:block;font-size:11px;color:var(--ink-3);font-weight:400;margin-top:2px">AI 服務、API Key、雲端帳號同步</span></label>
+        <span style="color:var(--ink-3)">›</span>
+      </div>
+    </div>
 
     <div class="settings-section">
       <div class="settings-title">閱讀設定</div>
@@ -754,40 +805,6 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <div style="font-size:11px;color:var(--ink-3);margin-top:4px">只計算頁面在前景、且正在閱讀章節內容的時間，切到別的分頁或鎖螢幕不會累計。</div>
     </div>
 
-    <div class="settings-section">
-      <div class="settings-title">☁ Firebase 雲端備份</div>
-      <div style="font-size:13px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:12px;border-radius:var(--radius)">
-        使用 <strong>Google Firebase Firestore</strong>（免費方案完全夠用）同步資料，換手機也可以繼續閱讀。
-      </div>
-      <div class="msection">
-        <label style="font-size:13px;color:var(--ink-2);font-weight:500">Firebase 設定（JSON）</label>
-        <div id="fbConfigBody" style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-          <textarea class="panel-ta" id="fbConfigText" style="height:100px;font-family:monospace;font-size:11px" placeholder='{"apiKey":"...","projectId":"..."}'></textarea>
-          <button class="btn-p btn-sm" id="btnSaveFbConfig" onclick="saveFbConfig()">儲存設定</button>
-        </div>
-      </div>
-      <div class="msection" id="fbLoginSection" style="display:none">
-        <label style="font-size:13px;color:var(--ink-2)">帳號登入（所有裝置用同一組）</label>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <input type="email" class="pinput" id="fbEmail" placeholder="Email..." style="font-size:13px">
-          <div style="display:flex;gap:8px">
-            <input type="password" class="pinput" id="fbPassword" placeholder="輸入密碼..." style="font-size:13px">
-            <button class="btn-p btn-sm" id="btnFbLogin" onclick="fbLogin()">連線</button>
-          </div>
-        </div>
-        <div style="font-size:11px;color:var(--ink-3);line-height:1.6">※ 首次輸入的 Email+密碼會自動建立帳號，之後所有裝置輸入相同帳密即可同步。這是真正的 Firebase 帳號登入，請到 Firestore 規則設定：<code>allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;</code>（將 users/{uid} 的 uid 換成路徑變數名稱）。</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap" id="fbActions">
-          <button class="btn-g btn-sm" id="btnFbBackup" style="display:none" onclick="fbBackup()">▲ 同步到雲端</button>
-          <button class="btn-g btn-sm" id="btnFbRestore" style="display:none" onclick="fbRestore()">▼ 從雲端還原</button>
-          <button class="btn-g btn-sm" id="btnFbLogout" style="display:none" onclick="fbLogout()">中斷連線</button>
-        </div>
-        <div style="display:none;align-items:center;gap:8px;margin-top:6px" id="autoSyncRow">
-          <label class="sw" style="transform:scale(.8);flex-shrink:0"><input type="checkbox" id="autoSyncToggle" onchange="toggleAutoSync(this.checked)"><span class="sl"></span></label>
-          <span style="font-size:12px;color:var(--ink-3)">自動同步（背景每隔幾分鐘偵測變更並只上傳差異）</span>
-        </div>
-      </div>
-      <div style="font-size:12px;color:var(--ink-3)" id="fbStatus"></div>
-    </div>
 <div class="settings-section">
       <div class="settings-title">資料管理</div>
       <div style="font-size:13px;color:var(--ink-2)">目前儲存 <strong id="storageNovelCount">0</strong> 本小說，<strong id="storageSize">—</strong></div>
@@ -1279,7 +1296,7 @@ function renderReadingStats(){
 
 // ══ Views ══
 function showView(id){
-  ["viewShelf","viewDetail","viewNovel","viewSettings"].forEach(v=>{
+  ["viewShelf","viewDetail","viewNovel","viewSettings","viewUserSettings"].forEach(v=>{
     document.getElementById(v).classList.toggle("active",v===id);
   });
   const inNovel = id==="viewNovel";
@@ -1310,6 +1327,7 @@ function goNovelBack(){
   else goShelf();
 }
 function goSettings(){showView("viewSettings");updateStorageInfo();renderReadingStats();}
+function goUserSettings(){showView("viewUserSettings");}
 
 // ══ Shelf ══
 let shelfTagFilter=[]; // selected tags to filter by (OR logic); empty = show all
@@ -3331,8 +3349,6 @@ async function fbBackup(auto){
       timestamp: new Date().toISOString(),
       settings: {...settings},
       userDict: localStorage.getItem('nr3_dict')||'',
-      apiKey:   localStorage.getItem('nr3_apikey')||'',
-      fbConfig: localStorage.getItem('nr3_fbconfig')||'',
       novelCount: novels.length,
       readTime: mergedReadTime,
       updatedAt: new Date().toISOString()
@@ -3471,7 +3487,7 @@ async function _doRestore(){
       if(meta.settings.theme)      setTheme(meta.settings.theme);
     }
     if(meta.userDict) localStorage.setItem('nr3_dict',    meta.userDict);
-    if(meta.apiKey)   localStorage.setItem('nr3_apikey',  meta.apiKey);
+    // 註：AI API Key 與 Firebase 設定不再同步/還原，各裝置各自保留自己本機的設定，避免金鑰外流風險
 
     // 閱讀時間：跟本地既有紀錄取每天的較大值合併，而不是直接覆蓋掉本地已經累積的時間
     if(meta.readTime){
@@ -3507,14 +3523,17 @@ setInterval(()=>{
   if(!fbUser || !fsProjectId) return;
   if(localStorage.getItem('nr3_autosync')==='off') return;
   if(!fbDirty) return;
-  fbDirty = false;
-  fbBackup(true).catch(e=>console.warn('auto sync failed', e));
+  fbBackup(true).then(()=>{ fbDirty=false; }).catch(e=>{
+    console.warn('auto sync failed, will retry next tick', e);
+    // 失敗時故意「不」清掉 fbDirty，讓下一次 tick 再重試，避免變更被靜默漏傳
+  });
 }, FB_AUTOSYNC_INTERVAL_MS);
 // 分頁被隱藏（切走/鎖屏）前也嘗試同步一次，避免變更留在本機太久沒上傳
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden' && fbUser && fsProjectId && fbDirty && localStorage.getItem('nr3_autosync')!=='off'){
-    fbDirty = false;
-    fbBackup(true).catch(e=>console.warn('auto sync failed', e));
+    fbBackup(true).then(()=>{ fbDirty=false; }).catch(e=>{
+      console.warn('auto sync failed, will retry next tick', e);
+    });
   }
 });
 
