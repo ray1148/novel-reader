@@ -2955,11 +2955,30 @@ function saveFbSession(){
 function loadFbSession(){
   try{ return JSON.parse(localStorage.getItem('nr3_fbsession')||'null'); }catch(e){ return null; }
 }
+let fsRefreshInFlight = null;
 async function ensureFreshToken(){
-  if(!fsIdToken || Date.now() >= fsTokenExpireAt){
-    await fsRefreshIdToken();
+  if(fsIdToken && Date.now() < fsTokenExpireAt) return fsIdToken;
+  // 並行狀態下可能有多個請求同時發現 token 快過期，這裡讓大家共用同一次刷新結果，避免重複打 API
+  if(!fsRefreshInFlight){
+    fsRefreshInFlight = fsRefreshIdToken().finally(()=>{ fsRefreshInFlight = null; });
   }
-  return fsIdToken;
+  return fsRefreshInFlight;
+}
+
+// ── 有限並行執行工具：一次最多同時跑 limit 個非同步工作（預設 6），
+//    大幅減少大量章節時序列 HTTP 往返造成的等待時間，同時避免一次全部發送造成過度併發 ──
+async function pMap(items, worker, limit=6){
+  const results = new Array(items.length);
+  let idx = 0;
+  async function runner(){
+    while(idx < items.length){
+      const cur = idx++;
+      results[cur] = await worker(items[cur], cur);
+    }
+  }
+  const runners = Array.from({length: Math.max(1, Math.min(limit, items.length))}, runner);
+  await Promise.all(runners);
+  return results;
 }
 
 function fsRestBase(){
@@ -3205,11 +3224,11 @@ async function decompressText(data){
 
 async function deleteCol(colPath){
   const docs = await fsRestList(colPath);
-  for(const doc of docs){
+  await pMap(docs, async (doc)=>{
     // doc.name = projects/.../documents/col/id
     const parts = doc.name.split('/documents/')[1];
     await fsRestDelete(parts);
-  }
+  }, 6);
 }
 
 // ── 變更偵測用的簡易 hash（非加密用途，只用來判斷內容是否變動）──
@@ -3309,17 +3328,16 @@ async function fbBackup(auto){
       return;
     }
 
-    // 2. 只上傳/刪除真正變動的部分
+    // 2. 只上傳/刪除真正變動的部分（最多同時 6 筆並行，加快大量章節時的速度）
     let done=0;
     const total=tasks.length;
-    for(const t of tasks){
+    if(!auto) msg.textContent = `同步中...（共 ${total} 項）`;
+    await pMap(tasks, async (t)=>{
       if(t.type==='deleteNovel'){
-        if(!auto) msg.textContent = `移除已刪除的小說 ${t.ni+1}...`;
         await deleteCol(`users/${uid}/novels/n${t.ni}/chapters`);
         await fsRestDelete(`users/${uid}/novels/n${t.ni}`);
       } else if(t.type==='novelMeta'){
         const n=novels[t.ni];
-        if(!auto) msg.textContent = `更新《${n.name}》資訊...`;
         await fsRestSet(`users/${uid}/novels/n${t.ni}`, {
           idx: t.ni, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
           converted:n.converted||false, scrollPct:n.scrollPct||0, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
@@ -3327,7 +3345,6 @@ async function fbBackup(auto){
         });
       } else if(t.type==='chapter'){
         const n=novels[t.ni], c=n.chapters[t.ci];
-        if(!auto) msg.textContent = `${n.name} — 章節 ${t.ci+1}/${n.chapters.length}`;
         const content     = await compressText(c.content     || '');
         const origin      = await compressText(c.origin      || '');
         const origContent = await compressText(c.origContent || '');
@@ -3336,12 +3353,14 @@ async function fbBackup(auto){
           idx: t.ci, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
         });
       } else if(t.type==='deleteChapter'){
-        if(!auto) msg.textContent = `刪除已移除的章節 ${t.ci+1}...`;
         await fsRestDelete(`users/${uid}/novels/n${t.ni}/chapters/c${t.ci}`);
       }
       done++;
-      if(!auto) bar.style.width = ((done/total)*100)+'%';
-    }
+      if(!auto){
+        bar.style.width = ((done/total)*100)+'%';
+        msg.textContent = `同步中... ${done}/${total}`;
+      }
+    }, 6);
 
     // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間
     await fsRestSet(`users/${uid}`, {
@@ -3418,23 +3437,29 @@ async function _doRestore(){
     }
     const meta = fromFsDoc(metaDoc);
     const novelCount = meta.novelCount || 0;
-    msg.textContent = `找到 ${novelCount} 本小說，開始還原...`;
+    msg.textContent = `找到 ${novelCount} 本小說，讀取小說資訊...`;
 
-    // 2. Read novels + chapters
-    const restoredNovels = [];
-    for(let ni=0; ni<novelCount; ni++){
+    // 2a. 並行讀取所有小說的 meta（最多同時 6 筆）
+    const novelIdxs = Array.from({length: novelCount}, (_,i)=>i);
+    const novelMetas = await pMap(novelIdxs, async (ni)=>{
       const nDoc = await fsRestGet(`users/${uid}/novels/n${ni}`);
-      if(!nDoc) continue;
-      const nData = fromFsDoc(nDoc);
-      msg.textContent = `還原小說 ${ni+1}/${novelCount}：${nData.name}`;
-      bar.style.width = ((ni/novelCount)*80) + '%';
+      return nDoc ? fromFsDoc(nDoc) : null;
+    }, 6);
+    bar.style.width = '20%';
 
-      // Read chapters
+    // 2b. 攤平出所有需要讀取的章節工作，統一並行讀取（最多同時 6 筆）
+    const chapterJobs = [];
+    novelMetas.forEach((nData, ni)=>{
+      if(!nData) return;
       const chapCount = nData.chapterCount || 0;
-      const chapters  = [];
-      for(let ci=0; ci<chapCount; ci++){
-        const cDoc = await fsRestGet(`users/${uid}/novels/n${ni}/chapters/c${ci}`);
-        if(!cDoc) continue;
+      for(let ci=0; ci<chapCount; ci++) chapterJobs.push({ni, ci});
+    });
+    const chaptersByNovel = novelMetas.map(()=>[]);
+    let chDone = 0;
+    const chTotal = chapterJobs.length || 1;
+    await pMap(chapterJobs, async ({ni, ci})=>{
+      const cDoc = await fsRestGet(`users/${uid}/novels/n${ni}/chapters/c${ci}`);
+      if(cDoc){
         const cData = fromFsDoc(cDoc);
         let content = cData.content || '';
         // Legacy parts (old format without compression)
@@ -3449,15 +3474,24 @@ async function _doRestore(){
         const finalOrigin      = cData.compressed ? await decompressText(cData.origin||'')     : (cData.origin||'');
         const finalOrigContent = cData.compressed ? await decompressText(cData.origContent||'') : (cData.origContent||'');
         const finalOrigOrigin  = cData.compressed ? await decompressText(cData.origOrigin||'')  : (cData.origOrigin||'');
-        chapters.push({
+        chaptersByNovel[ni][ci] = {
           title:       cData.title  || '',
           content:     finalContent,
           origin:      finalOrigin,
           origContent: finalOrigContent,
           origOrigin:  finalOrigOrigin,
-        });
+        };
       }
+      chDone++;
+      bar.style.width = (20 + (chDone/chTotal)*70) + '%';
+      msg.textContent = `還原章節中... ${chDone}/${chTotal}`;
+    }, 6);
 
+    // 3. 組合成最終的小說陣列（維持原本順序，跳過抓取失敗的章節）
+    const restoredNovels = [];
+    novelMetas.forEach((nData, ni)=>{
+      if(!nData) return;
+      const chapters = (chaptersByNovel[ni]||[]).filter(c=>c!==undefined);
       restoredNovels.push({
         name:      nData.name      || '',
         author:    nData.author    || '',
@@ -3470,7 +3504,7 @@ async function _doRestore(){
         tags:      nData.tags      || [],
         chapters,
       });
-    }
+    });
 
     novels = restoredNovels;
     persist();
