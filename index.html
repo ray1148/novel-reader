@@ -610,6 +610,16 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <span class="hl-dot" style="background:#bfdbfe" onclick="selHighlight('hl-blue')"></span>
     <button class="sel-btn" style="margin-left:4px;border-left:1px solid #eee;border-right:none" onclick="hideSelMenu()">✕</button>
   </div>
+  <!-- Existing highlight edit menu -->
+  <div class="sel-menu" id="hlEditMenu">
+    <span style="font-size:12px;color:#888;padding:0 8px">畫線</span>
+    <span class="hl-dot" style="background:#fef08a" onclick="changeHlColor('hl-yellow')"></span>
+    <span class="hl-dot" style="background:#bbf7d0" onclick="changeHlColor('hl-green')"></span>
+    <span class="hl-dot" style="background:#fecdd3" onclick="changeHlColor('hl-pink')"></span>
+    <span class="hl-dot" style="background:#bfdbfe" onclick="changeHlColor('hl-blue')"></span>
+    <button class="sel-btn" style="margin-left:4px;border-left:1px solid #eee" onclick="deleteHighlight()">🗑</button>
+    <button class="sel-btn" style="border-right:none" onclick="hideHlEditMenu()">✕</button>
+  </div>
   <!-- Chapter search overlay -->
   <div class="search-overlay" id="searchOverlay">
     <button class="search-nav-btn" onclick="closeSearch()">&#10005;</button>
@@ -933,13 +943,13 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         </div>
         <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;flex-wrap:wrap">
           <span style="font-size:12px;color:var(--ink-3)">選取文字套用顏色：</span>
-          <button type="button" class="color-mark-btn" style="background:#e53935" onclick="insertColorMarker('red')" title="紅"></button>
-          <button type="button" class="color-mark-btn" style="background:#1e88e5" onclick="insertColorMarker('blue')" title="藍"></button>
-          <button type="button" class="color-mark-btn" style="background:#f9a825" onclick="insertColorMarker('yellow')" title="黃"></button>
-          <button type="button" class="color-mark-btn" style="background:#43a047" onclick="insertColorMarker('green')" title="綠"></button>
-          <button type="button" class="color-mark-btn" style="background:#fb8c00" onclick="insertColorMarker('orange')" title="橘"></button>
-          <button type="button" class="color-mark-btn" style="background:#8e24aa" onclick="insertColorMarker('purple')" title="紫"></button>
-          <button type="button" class="btn-g btn-sm" style="font-size:11px;padding:3px 10px" onclick="clearColorMarker()">清除顏色</button>
+          <button type="button" class="color-mark-btn" style="background:#e53935" onmousedown="event.preventDefault()" onclick="insertColorMarker('red')" title="紅"></button>
+          <button type="button" class="color-mark-btn" style="background:#1e88e5" onmousedown="event.preventDefault()" onclick="insertColorMarker('blue')" title="藍"></button>
+          <button type="button" class="color-mark-btn" style="background:#f9a825" onmousedown="event.preventDefault()" onclick="insertColorMarker('yellow')" title="黃"></button>
+          <button type="button" class="color-mark-btn" style="background:#43a047" onmousedown="event.preventDefault()" onclick="insertColorMarker('green')" title="綠"></button>
+          <button type="button" class="color-mark-btn" style="background:#fb8c00" onmousedown="event.preventDefault()" onclick="insertColorMarker('orange')" title="橘"></button>
+          <button type="button" class="color-mark-btn" style="background:#8e24aa" onmousedown="event.preventDefault()" onclick="insertColorMarker('purple')" title="紫"></button>
+          <button type="button" class="btn-g btn-sm" style="font-size:11px;padding:3px 10px" onmousedown="event.preventDefault()" onclick="clearColorMarker()">清除顏色</button>
         </div>
         <textarea class="edit-textarea" id="chapContent" placeholder="在這裡輸入或貼上章節內容...
 
@@ -1342,6 +1352,28 @@ function goNovelBack(){
 function goSettings(){showView("viewSettings");updateStorageInfo();renderReadingStats();}
 function goUserSettings(){showView("viewUserSettings");}
 
+// ══ Novel-wide progress (shared) ══
+// Computes overall reading % accounting for fully-read chapters PLUS the
+// scroll position inside the current chapter, instead of just counting
+// whole chapters. This keeps the bookshelf cover, detail page, and the
+// in-reader progress panel all showing the same, more accurate number.
+function computeNovelPct(n){
+  const totalChaps=n.chapters?n.chapters.length:0;
+  if(!totalChaps) return 0;
+  const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
+  const lastIdx=(n.lastChapter!=null)?Math.min(n.lastChapter,totalChaps-1):-1;
+  if(lastIdx<0) return 0;
+  if(!totalChars){
+    // No character data available (e.g. empty chapters) — fall back to
+    // simple chapter-count based estimate.
+    return Math.round(((lastIdx+1)/totalChaps)*100);
+  }
+  let charsRead=0;
+  for(let i=0;i<lastIdx;i++) charsRead+=(n.chapters[i].content||"").length;
+  charsRead+=(n.chapters[lastIdx].content||"").length*(n.chapters[lastIdx].scrollPct||0);
+  return Math.min(100,Math.round((charsRead/totalChars)*100));
+}
+
 // ══ Shelf ══
 let shelfTagFilter=[]; // selected tags to filter by (OR logic); empty = show all
 function renderShelfTagFilter(){
@@ -1410,10 +1442,8 @@ function renderShelf(){
 
   sortedIndices.forEach(i=>{
     const n=novels[i];
-    // Progress = chapters read so far / total chapters
-    const totalChaps = n.chapters.length || 1;
-    const readChaps = (n.lastChapter != null) ? Math.min(n.lastChapter + 1, totalChaps) : 0;
-    const pct = n.chapters.length ? Math.round((readChaps / totalChaps) * 100) : 0;
+    // Progress = fully-read chapters + scroll position within current chapter
+    const pct = computeNovelPct(n);
     const card=document.createElement("div");
     card.className="book-card";
 
@@ -1538,7 +1568,7 @@ function showDetail(idx){
   const totalChaps=n.chapters.length;
   const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
   const readChapsD = (n.lastChapter!=null) ? Math.min(n.lastChapter+1, totalChaps) : 0;
-  const pctD = totalChaps ? Math.round((readChapsD/totalChaps)*100) : 0;
+  const pctD = computeNovelPct(n);
   document.getElementById("detailStats").innerHTML=
     `${totalChaps} 章節 &nbsp;·&nbsp; ${(totalChars/10000).toFixed(1)} 萬字 &nbsp;·&nbsp; 已讀第${readChapsD}章 (${pctD}%)`;
   // Continue reading button
@@ -1695,8 +1725,11 @@ function renderToc(){
 
 function loadChapter(idx){
   activeChapter=idx;
+  chapterLoadTime=Date.now();
   const n=novels[activeNovel],c=n.chapters[idx];
-  // Remember which chapter was last read
+  // Remember which chapter is currently open — this is the basis for both
+  // "continue reading" and the overall progress % (combined with this
+  // chapter's own scroll position, see computeNovelPct).
   n.lastChapter=idx;
   document.getElementById("chapterTitle").textContent=c.title||"第"+(idx+1)+"章";
   document.getElementById("novelSubtitle").textContent=n.name+" · "+(c.title||"第"+(idx+1)+"章");
@@ -1772,6 +1805,21 @@ function hideReadingUI(){
 function toggleReadingUI(){
   if(uiVisible) hideReadingUI();
   else showReadingUI();
+}
+
+// Returns the index of the next chapter in reading order, or -1 if this is the last one
+function getNextChapterIdx(){
+  if(activeNovel<0) return -1;
+  const n=novels[activeNovel];
+  if(!n||!n.chapters.length) return -1;
+  const sorted=[...n.chapters.keys()].sort((a,b)=>{
+    const ka=chapSortKey(n.chapters[a].title);
+    const kb=chapSortKey(n.chapters[b].title);
+    if(ka!==kb) return ka-kb;
+    return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
+  });
+  const curPos=sorted.indexOf(activeChapter);
+  return curPos>=0 && curPos<sorted.length-1 ? sorted[curPos+1] : -1;
 }
 
 function updateBottomBar(){
@@ -1880,6 +1928,8 @@ document.getElementById("paneLeft").addEventListener("click", function(e){
 });
 
 let lastScrollY = 0;
+let chapterLoadTime = 0;
+let autoAdvanceLock = false;
 // setHeadersHidden removed (replaced by tap-to-show UI)
 document.getElementById("paneLeft").addEventListener("scroll",function(){
   if(activeNovel<0)return;
@@ -1894,15 +1944,31 @@ document.getElementById("paneLeft").addEventListener("scroll",function(){
   if(slider&&uiVisible){ slider.value=Math.round(pct*100); if(pctEl) pctEl.textContent=Math.round(pct*100)+"%"; }
   updateBottomBarScroll();
   lastScrollY = this.scrollTop;
+
+  // Auto-advance: scrolling to the very bottom of a chapter loads the next one.
+  // Guarded against the programmatic scroll-restore that runs right after
+  // loadChapter() (so resuming near the end of a chapter doesn't instantly skip it).
+  const scrollable=this.scrollHeight>this.clientHeight;
+  const nearBottom=this.scrollHeight-this.scrollTop-this.clientHeight<32;
+  if(scrollable && nearBottom && !autoAdvanceLock && Date.now()-chapterLoadTime>700){
+    const nextIdx=getNextChapterIdx();
+    if(nextIdx>=0){
+      autoAdvanceLock=true;
+      loadChapter(nextIdx);
+      this.scrollTop=0;
+      showToast("已進入 "+(novels[activeNovel].chapters[nextIdx].title||"第"+(nextIdx+1)+"章"));
+      setTimeout(()=>{autoAdvanceLock=false;},1000);
+    }
+  }
 });
 function updateTopBar(){
   if(activeNovel<0)return;
   const n=novels[activeNovel];
   const totalChaps=n.chapters.length||1;
   const readChaps=Math.min(activeChapter+1, totalChaps);
-  const pct=Math.round((readChaps/totalChaps)*100);
+  const pct=computeNovelPct(n);
   document.getElementById("pgFill").style.width=pct+"%";
-  document.getElementById("pgTip").textContent="第"+readChaps+"章/"+totalChaps+"章";
+  document.getElementById("pgTip").textContent="第"+readChaps+"章/"+totalChaps+"章 · "+pct+"%";
 }
 function showUIBriefly(){
   showReadingUI();
@@ -1930,10 +1996,10 @@ function switchTab(t){
 // ══ Progress ══
 function updateProgress(){
   if(activeNovel<0)return;
-  const n=novels[activeNovel],pct=Math.round((n.scrollPct||0)*100);
+  const n=novels[activeNovel],pct=computeNovelPct(n);
   // total chars across all chapters
   const total=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
-  const read=Math.round(total*(n.scrollPct||0));
+  const read=Math.round(total*(pct/100));
   document.getElementById("pgNovelName").textContent=n.name;
   document.getElementById("pgBar").style.width=pct+"%";
   document.getElementById("pgPct").textContent=pct+"%";
@@ -3442,9 +3508,9 @@ async function fbBackup(auto){
       msg.textContent = '同步完成！' + ts;
       setTimeout(()=>{ overlay.style.display='none'; }, 1200);
       showToast(`☁ 同步成功！（${summary}）`);
-    } else {
-      showToast(`☁ 自動同步完成（${summary}）`);
     }
+    // auto=true (background auto-sync) stays silent — no toast — status is
+    // still recorded via setFbStatus below for anyone who opens Settings.
     setFbStatus('✅ 同步成功！' + ts);
   } catch(e){
     if(!auto) overlay.style.display = 'none';
@@ -3998,6 +4064,90 @@ function selHighlight(cls){
     showToast('此選取範圍無法畫線');
     hideSelMenu();
   }
+}
+
+// ══ Edit existing highlight (change color / delete) ══
+let editingMarkEl = null;
+let editingHlId   = null;
+
+// Click on an already-highlighted mark opens the edit menu
+document.addEventListener('click', function(e){
+  const markEl = e.target.closest && e.target.closest('mark[data-hl-id]');
+  if(!markEl || markEl.classList.contains('search-highlight')) return;
+  const pane = document.getElementById('paneContent');
+  if(!pane || !pane.contains(markEl)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openHlEditMenu(markEl);
+});
+
+// Click outside the edit menu (and not on a mark) closes it
+document.addEventListener('mousedown', function(e){
+  const menu = document.getElementById('hlEditMenu');
+  if(!menu || !menu.classList.contains('show')) return;
+  const onMark = e.target.closest && e.target.closest('mark[data-hl-id]');
+  if(!menu.contains(e.target) && !onMark) hideHlEditMenu();
+});
+
+function openHlEditMenu(markEl){
+  hideSelMenu();
+  editingMarkEl = markEl;
+  editingHlId   = markEl.dataset.hlId;
+
+  const rect = markEl.getBoundingClientRect();
+  const menu = document.getElementById('hlEditMenu');
+  menu.classList.add('show');
+  const mw = menu.offsetWidth || 280;
+  let left = rect.left + rect.width/2 - mw/2;
+  left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
+  let top  = rect.top - menu.offsetHeight - 12;
+  if(top < 8) top = rect.bottom + 12;
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+}
+
+function hideHlEditMenu(){
+  const menu = document.getElementById('hlEditMenu');
+  if(menu) menu.classList.remove('show');
+  editingMarkEl = null; editingHlId = null;
+}
+
+function changeHlColor(cls){
+  if(!editingMarkEl || activeNovel<0){ hideHlEditMenu(); return; }
+  editingMarkEl.className = cls;
+  const n = novels[activeNovel];
+  const c = n?.chapters?.[activeChapter];
+  if(c && c.highlights){
+    const h = c.highlights.find(h=>String(h.id)===String(editingHlId));
+    if(h) h.cls = cls;
+  }
+  persist();
+  showToast('畫線顏色已更新');
+  hideHlEditMenu();
+}
+
+function deleteHighlight(){
+  if(!editingMarkEl || activeNovel<0){ hideHlEditMenu(); return; }
+  const markEl = editingMarkEl;
+  const hlId   = editingHlId;
+  unwrapMark(markEl);
+  const n = novels[activeNovel];
+  const c = n?.chapters?.[activeChapter];
+  if(c && c.highlights){
+    c.highlights = c.highlights.filter(h=>String(h.id)!==String(hlId));
+  }
+  persist();
+  showToast('畫線已移除');
+  hideHlEditMenu();
+}
+
+// Remove a <mark> wrapper while keeping its text content in place
+function unwrapMark(markEl){
+  const parent = markEl.parentNode;
+  if(!parent) return;
+  while(markEl.firstChild) parent.insertBefore(markEl.firstChild, markEl);
+  parent.removeChild(markEl);
+  parent.normalize();
 }
 
 // ══ Toast ══
