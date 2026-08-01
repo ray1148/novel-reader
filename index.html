@@ -1360,17 +1360,21 @@ function goUserSettings(){showView("viewUserSettings");}
 function computeNovelPct(n){
   const totalChaps=n.chapters?n.chapters.length:0;
   if(!totalChaps) return 0;
+  if(n.lastChapter==null) return 0;
+  // Walk chapters in *reading order* (not raw storage order) so side-story
+  // chapters stored out of sequence don't throw off the percentage.
+  const sorted=getSortedChapterIndices(n);
+  const curPos=sorted.indexOf(n.lastChapter);
+  if(curPos<0) return 0;
   const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
-  const lastIdx=(n.lastChapter!=null)?Math.min(n.lastChapter,totalChaps-1):-1;
-  if(lastIdx<0) return 0;
   if(!totalChars){
     // No character data available (e.g. empty chapters) — fall back to
     // simple chapter-count based estimate.
-    return Math.round(((lastIdx+1)/totalChaps)*100);
+    return Math.round(((curPos+1)/totalChaps)*100);
   }
   let charsRead=0;
-  for(let i=0;i<lastIdx;i++) charsRead+=(n.chapters[i].content||"").length;
-  charsRead+=(n.chapters[lastIdx].content||"").length*(n.chapters[lastIdx].scrollPct||0);
+  for(let i=0;i<curPos;i++) charsRead+=(n.chapters[sorted[i]].content||"").length;
+  charsRead+=(n.chapters[n.lastChapter].content||"").length*(n.chapters[n.lastChapter].scrollPct||0);
   return Math.min(100,Math.round((charsRead/totalChars)*100));
 }
 
@@ -1508,7 +1512,7 @@ function renderShelf(){
     const metaEl=document.createElement("div");
     metaEl.className="book-meta";
     const chapInfo = n.chapters.length
-      ? (n.lastChapter!=null ? "第"+(n.lastChapter+1)+"章" : "未開始") + " / 共"+n.chapters.length+"章 · "+pct+"%"
+      ? (n.lastChapter!=null ? "第"+getChapterDisplayPos(n,n.lastChapter)+"章" : "未開始") + " / 共"+n.chapters.length+"章 · "+pct+"%"
       : "尚無章節";
     metaEl.textContent=(n.author?n.author+" · ":"")+chapInfo;
     info.appendChild(nameEl);
@@ -1567,7 +1571,7 @@ function showDetail(idx){
   // Stats
   const totalChaps=n.chapters.length;
   const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
-  const readChapsD = (n.lastChapter!=null) ? Math.min(n.lastChapter+1, totalChaps) : 0;
+  const readChapsD = (n.lastChapter!=null) ? getChapterDisplayPos(n,n.lastChapter) : 0;
   const pctD = computeNovelPct(n);
   document.getElementById("detailStats").innerHTML=
     `${totalChaps} 章節 &nbsp;·&nbsp; ${(totalChars/10000).toFixed(1)} 萬字 &nbsp;·&nbsp; 已讀第${readChapsD}章 (${pctD}%)`;
@@ -1587,11 +1591,7 @@ function renderDetailChapList(){
     list.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink-3);font-size:13px">尚無章節，點擊上方「＋ 新增」加入</div>';
     return;
   }
-  const sorted=[...n.chapters.keys()].sort((a,b)=>{
-    const ka=chapSortKey(n.chapters[a].title);
-    const kb=chapSortKey(n.chapters[b].title);
-    return ka!==kb?ka-kb:(n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
-  });
+  const sorted=getSortedChapterIndices(n);
   const resumeChap=(n.lastChapter!=null&&n.lastChapter<n.chapters.length)?n.lastChapter:0;
   sorted.forEach((realIdx,pos)=>{
     const c=n.chapters[realIdx];
@@ -1660,19 +1660,49 @@ function chineseToNum(s){
 
 function chapSortKey(title){
   if(!title) return Infinity;
+  // Side-story chapters (番外/外傳/特別篇/特典/Extra) sort after all main chapters,
+  // but still keep their own relative numeric order among themselves.
+  const isExtra = /番外|外傳|外传|特別篇|特别篇|特典|Extra/i.test(title);
+  const offset = isExtra ? 1000000 : 0;
   // Match "第123章/話/回/節" anywhere in the title (allows prefixes like "怪談上班第1章")
   let m = title.match(/第\s*(\d+)\s*[章話回節话]/);
-  if(m) return parseInt(m[1]);
+  if(m) return offset+parseInt(m[1]);
   // Match Chinese numerals anywhere: "第一章", "第十二章", "第一百章"
   let m2 = title.match(/第\s*([零一二三四五六七八九十百千萬〇壹貳叄肆伍陸柒捌玖]+)\s*[章話回節话]/);
-  if(m2){ const n=chineseToNum(m2[1]); if(!isNaN(n)) return n; }
+  if(m2){ const n=chineseToNum(m2[1]); if(!isNaN(n)) return offset+n; }
   // Match "Chapter 5" anywhere
   let m3 = title.match(/Chapter\s*(\d+)/i);
-  if(m3) return parseInt(m3[1]);
+  if(m3) return offset+parseInt(m3[1]);
   // Fallback: first run of digits anywhere in the title (e.g. plain "001", "123.")
   let m4 = title.match(/(\d+)/);
-  if(m4) return parseInt(m4[1]);
+  if(m4) return offset+parseInt(m4[1]);
   return Infinity;
+}
+
+// Chapter indices sorted into "reading order" (matches what the TOC shows):
+// by chapSortKey, with title as a tie-breaker. Shared by every place that
+// needs to know "which chapter comes after which" so numbering stays
+// consistent even when chapters aren't stored in reading order (e.g.
+// side-story chapters imported out of sequence).
+function getSortedChapterIndices(n){
+  return [...n.chapters.keys()].sort((a,b)=>{
+    const ka=chapSortKey(n.chapters[a].title);
+    const kb=chapSortKey(n.chapters[b].title);
+    if(ka!==kb) return ka-kb;
+    return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
+  });
+}
+
+// Converts a raw chapters-array index into its 1-based position within the
+// sorted reading order. Raw array index alone isn't reliable for "chapter X
+// of Y" labels because chapters (especially side stories) may be stored out
+// of reading order — using the sorted position keeps the cover, detail page,
+// and in-reader progress all showing the same chapter number.
+function getChapterDisplayPos(n, rawIdx){
+  if(rawIdx==null || rawIdx<0 || !n?.chapters?.length) return 0;
+  const sorted=getSortedChapterIndices(n);
+  const pos=sorted.indexOf(rawIdx);
+  return pos>=0 ? pos+1 : rawIdx+1;
 }
 function renderToc(){
   const n=novels[activeNovel],list=document.getElementById("tocList");
@@ -1684,13 +1714,7 @@ function renderToc(){
     list.appendChild(empty);return;
   }
   // Create sorted index array (sort by chapter number in title)
-  const indices=[...n.chapters.keys()].sort((a,b)=>{
-    const ka=chapSortKey(n.chapters[a].title);
-    const kb=chapSortKey(n.chapters[b].title);
-    if(ka!==kb) return ka-kb;
-    // fallback: alphabetical
-    return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
-  });
+  const indices=getSortedChapterIndices(n);
   indices.forEach((realIdx,displayPos)=>{
     const c=n.chapters[realIdx];
     const el=document.createElement("div");
@@ -1812,12 +1836,7 @@ function getNextChapterIdx(){
   if(activeNovel<0) return -1;
   const n=novels[activeNovel];
   if(!n||!n.chapters.length) return -1;
-  const sorted=[...n.chapters.keys()].sort((a,b)=>{
-    const ka=chapSortKey(n.chapters[a].title);
-    const kb=chapSortKey(n.chapters[b].title);
-    if(ka!==kb) return ka-kb;
-    return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
-  });
+  const sorted=getSortedChapterIndices(n);
   const curPos=sorted.indexOf(activeChapter);
   return curPos>=0 && curPos<sorted.length-1 ? sorted[curPos+1] : -1;
 }
@@ -1826,12 +1845,7 @@ function updateBottomBar(){
   if(activeNovel<0) return;
   const n=novels[activeNovel];
   const c=n.chapters[activeChapter];
-  const sorted=[...n.chapters.keys()].sort((a,b)=>{
-    const ka=chapSortKey(n.chapters[a].title);
-    const kb=chapSortKey(n.chapters[b].title);
-    if(ka!==kb) return ka-kb;
-    return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
-  });
+  const sorted=getSortedChapterIndices(n);
   const curPos=sorted.indexOf(activeChapter);
   const prevIdx=curPos>0?sorted[curPos-1]:-1;
   const nextIdx=curPos<sorted.length-1?sorted[curPos+1]:-1;
@@ -1965,7 +1979,7 @@ function updateTopBar(){
   if(activeNovel<0)return;
   const n=novels[activeNovel];
   const totalChaps=n.chapters.length||1;
-  const readChaps=Math.min(activeChapter+1, totalChaps);
+  const readChaps=getChapterDisplayPos(n, activeChapter)||1;
   const pct=computeNovelPct(n);
   document.getElementById("pgFill").style.width=pct+"%";
   document.getElementById("pgTip").textContent="第"+readChaps+"章/"+totalChaps+"章 · "+pct+"%";
