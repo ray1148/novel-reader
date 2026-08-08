@@ -2,10 +2,16 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- 加到主畫面後以全螢幕獨立視窗開啟，不顯示網址列 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="小說閱讀助手">
+<meta name="theme-color" content="#1a1814">
 <title>小說閱讀助手</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
+*{box-sizing:border-box;margin:0;padding:0;touch-action:manipulation}
 :root{
   --ink:#1a1814;--ink-2:#4a4640;--ink-3:#8a8480;
   --paper:#f7f4ef;--paper-2:#ede9e2;--paper-3:#ddd8cf;
@@ -396,6 +402,10 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <span>我的書架</span>
       <div style="display:flex;gap:8px">
         <button class="btn-g btn-sm" onclick="openSearchModal()">🔍 搜尋</button>
+        <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
+          <input type="file" accept=".json" id="importNovelFile" style="display:none" onchange="importNovelFile(this)">
+          &#11014; 匯入
+        </label>
         <button class="btn-primary btn-sm" onclick="openAddModal()">＋ 新增小說</button>
       </div>
     </div>
@@ -420,6 +430,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <div class="detail-header">
       <button class="back-btn" onclick="goShelf()">&#8592;</button>
       <span id="detailTitle" style="font-size:15px;font-weight:600;flex:1"></span>
+      <button class="btn-ghost btn-sm" onclick="exportNovel(activeNovel)" title="匯出成檔案，分享給別人時不會動到你的閱讀進度">&#11015; 匯出</button>
     </div>
     <div class="detail-cover-wrap">
       <div class="detail-cover" id="detailCover">
@@ -449,6 +460,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         </label>
       </div>
     </div>
+    <div id="detailChapWarning" style="display:none"></div>
+    <div id="detailChapTabs" style="display:flex;gap:6px;margin:8px 0"></div>
     <div class="detail-chap-list" id="detailChapList"></div>
   </div>
 </div>
@@ -456,7 +469,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 <!-- ══ NOVEL VIEW ══ -->
 <div class="view" id="viewNovel">
   <div class="novel-header ui-hidden" id="novelHeader">
-    <button class="back-btn" onclick="goShelf()">←</button>
+    <button class="back-btn" onclick="goNovelBack()">←</button>
     <div class="novel-title-bar">
       <div id="novelTitleBar">小說名稱</div>
       <div class="novel-subtitle" id="novelSubtitle"></div>
@@ -479,7 +492,10 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
           <button class="toc-toggle" onclick="toggleToc()">✕</button>
         </div>
       </div>
-      <div class="toc-list" id="tocList"></div>
+      <div class="toc-list" id="tocList">
+        <div id="tocTabs" style="display:flex;gap:6px;padding:0 14px 8px"></div>
+        <div id="tocItems"></div>
+      </div>
     </div>
 
     <!-- Reader -->
@@ -924,6 +940,21 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <div class="modal-body">
       <div class="msection"><label>章節標題</label><input type="text" id="chapTitle" placeholder="例：第一章 初入江湖"></div>
       <div class="msection">
+        <label>章節分類</label>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
+            <input type="radio" name="chapCategory" id="chapCategoryMain" value="main" checked> 正篇
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:14px">
+            <input type="radio" name="chapCategory" id="chapCategoryExtra" value="extra"> 番外
+          </label>
+        </div>
+      </div>
+      <div class="msection" id="chapExtraPosSection" style="display:none">
+        <label>插入位置<span style="color:var(--ink-3);font-weight:400">（番外目前手動排序中，可直接指定要插在第幾個，不用之後再用 ▲▼ 慢慢調）</span></label>
+        <input type="number" id="chapExtraPos" min="1" style="width:100px">
+      </div>
+      <div class="msection">
         <label>上傳文字檔（.txt）<span style="color:var(--ink-3);font-weight:400">（可選，也可直接在下方輸入）</span></label>
         <label class="file-drop">
           <input type="file" accept=".txt" id="chapFile" onchange="handleChapFile(this)">
@@ -1108,6 +1139,7 @@ async function load(){
   }
   if(loaded){
     novels.forEach(n=>{if(!n.bookmarks)n.bookmarks=[];if(n.scrollPct==null)n.scrollPct=0;if(!n.chapters)n.chapters=[];if(!n.color)n.color=COVER_COLORS[0];if(!n.tags)n.tags=[];});
+    if(ensureIds()) persist();
   }
   const sk=localStorage.getItem("nr3_apikey");if(sk)document.getElementById("apiKeyInput").value=sk;
   const fs=localStorage.getItem("nr3_fs");if(fs){settings.fontSize=+fs;document.getElementById("fontSizeRange").value=fs;document.getElementById("fontSizeVal").textContent=fs+"px";applySettings();}
@@ -1535,6 +1567,7 @@ function openNovel(idx){
 function showDetail(idx){
   activeNovel=idx;
   const n=novels[idx];
+  detailChapTab='main';
   // Record last opened time for sorting
   n.lastOpenedAt = Date.now();
   persist();
@@ -1583,17 +1616,76 @@ function showDetail(idx){
   renderDetailChapList();
 }
 
+// Which tab is showing in the detail page's chapter list: 'main' or 'extra'
+// (番外). Reset to 'main' whenever a different novel's detail page opens.
+let detailChapTab = 'main';
+function setDetailChapTab(tab){ detailChapTab=tab; renderDetailChapList(); }
+
 function renderDetailChapList(){
   const n=novels[activeNovel];
   const list=document.getElementById("detailChapList");
+  const tabsEl=document.getElementById("detailChapTabs");
+  const warnEl=document.getElementById("detailChapWarning");
   list.innerHTML="";
   if(!n||!n.chapters.length){
+    if(tabsEl) tabsEl.innerHTML="";
+    if(warnEl) warnEl.style.display="none";
     list.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink-3);font-size:13px">尚無章節，點擊上方「＋ 新增」加入</div>';
     return;
   }
+  if(warnEl){
+    const missing=findMissingChapterNumbers(n);
+    if(missing.length){
+      warnEl.style.cssText="display:block;margin:8px 0;padding:8px 12px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:12.5px;line-height:1.5";
+      warnEl.textContent=missingChaptersMessage(missing);
+    } else {
+      warnEl.style.display="none";
+    }
+  }
   const sorted=getSortedChapterIndices(n);
+  const mainIdxs=sorted.filter(i=>!isSideStory(n.chapters[i]));
+  const extraIdxs=sorted.filter(i=>isSideStory(n.chapters[i]));
+
+  // Only show tabs (and the 番外 tab) when this novel actually has side stories
+  if(tabsEl){
+    tabsEl.innerHTML="";
+    if(extraIdxs.length){
+      const mkTab=(key,label,count)=>{
+        const b=document.createElement("button");
+        b.className="btn-g btn-sm";
+        b.textContent=`${label} (${count})`;
+        b.style.cssText = detailChapTab===key
+          ? "border-radius:999px;padding:4px 14px;font-weight:600;background:var(--ink);color:var(--paper);border:1px solid var(--ink)"
+          : "border-radius:999px;padding:4px 14px;background:var(--paper-2);color:var(--ink-2);border:1px solid var(--paper-3)";
+        b.addEventListener("click",()=>setDetailChapTab(key));
+        return b;
+      };
+      tabsEl.appendChild(mkTab('main','正篇',mainIdxs.length));
+      tabsEl.appendChild(mkTab('extra','番外',extraIdxs.length));
+      // 只有在看番外分頁、而且番外有 2 篇以上時才給手動排序切換鈕（正篇不提供，一律自動排序）
+      if(detailChapTab==='extra' && extraIdxs.length>1){
+        const toggleBtn=document.createElement("button");
+        toggleBtn.className="btn-g btn-sm";
+        toggleBtn.style.marginLeft="auto";
+        toggleBtn.textContent=n.extraManualOrder?"✅ 手動排序中":"🔀 手動排序";
+        toggleBtn.addEventListener("click",()=>toggleExtraManualOrder());
+        tabsEl.appendChild(toggleBtn);
+      }
+    } else {
+      detailChapTab='main';
+    }
+  }
+
+  const shown = (extraIdxs.length && detailChapTab==='extra') ? extraIdxs : mainIdxs;
   const resumeChap=(n.lastChapter!=null&&n.lastChapter<n.chapters.length)?n.lastChapter:0;
-  sorted.forEach((realIdx,pos)=>{
+  const showMoveBtns = detailChapTab==='extra' && !!n.extraManualOrder;
+
+  if(!shown.length){
+    list.innerHTML='<div style="padding:20px;text-align:center;color:var(--ink-3);font-size:13px">這個分類目前沒有章節</div>';
+    return;
+  }
+
+  shown.forEach((realIdx,pos)=>{
     const c=n.chapters[realIdx];
     const item=document.createElement("div");
     item.className="detail-chap-item"+(realIdx===resumeChap?" active-chap":"");
@@ -1607,6 +1699,19 @@ function renderDetailChapList(){
     if(badge){ badge.style.cssText="font-size:10px;background:var(--gold);color:white;padding:2px 6px;border-radius:10px;"; badge.textContent="上次"; }
     const actions=document.createElement("div");
     actions.className="detail-chap-actions";
+    if(showMoveBtns){
+      const upBtn=document.createElement("button");
+      upBtn.className="btn-g btn-sm";upBtn.textContent="▲";upBtn.style.padding="3px 7px";
+      upBtn.disabled=pos===0;
+      upBtn.style.opacity=pos===0?"0.35":"1";
+      upBtn.addEventListener("click",e=>{e.stopPropagation();moveSideStoryUp(realIdx);});
+      const downBtn=document.createElement("button");
+      downBtn.className="btn-g btn-sm";downBtn.textContent="▼";downBtn.style.padding="3px 7px";
+      downBtn.disabled=pos===shown.length-1;
+      downBtn.style.opacity=pos===shown.length-1?"0.35":"1";
+      downBtn.addEventListener("click",e=>{e.stopPropagation();moveSideStoryDown(realIdx);});
+      actions.appendChild(upBtn);actions.appendChild(downBtn);
+    }
     const editBtn=document.createElement("button");
     editBtn.className="btn-g btn-sm";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
     editBtn.addEventListener("click",e=>{e.stopPropagation();openEditModal(activeNovel,realIdx);});
@@ -1623,6 +1728,7 @@ function startReading(chapIdx){
   const n=novels[activeNovel];
   document.getElementById("novelTitleBar").textContent=n.name;
   showView("viewNovel");
+  tocChapTab = isSideStory(n.chapters[chapIdx]) ? 'extra' : 'main';
   renderToc();
   loadChapter(chapIdx);
 }
@@ -1658,12 +1764,19 @@ function chineseToNum(s){
   return result||NaN;
 }
 
-function chapSortKey(title){
-  if(!title) return Infinity;
-  // Side-story chapters (番外/外傳/特別篇/特典/Extra) sort after all main chapters,
-  // but still keep their own relative numeric order among themselves.
-  const isExtra = /番外|外傳|外传|特別篇|特别篇|特典|Extra/i.test(title);
-  const offset = isExtra ? 1000000 : 0;
+// Whether a chapter counts as a "side story" (番外/外傳/特別篇/特典/Extra).
+// A chapter's own explicit choice (set in the 新增/編輯章節 modal) always
+// wins; falls back to detecting keywords in the title for chapters created
+// before this feature existed or added via batch import.
+function isSideStory(c){
+  if(!c) return false;
+  if(typeof c.isExtra === 'boolean') return c.isExtra;
+  return /番外|外傳|外传|特別篇|特别篇|特典|Extra/i.test(c.title||'');
+}
+function chapSortKey(c){
+  if(!c || !c.title) return Infinity;
+  const title=c.title;
+  const offset = isSideStory(c) ? 1000000 : 0;
   // Match "第123章/話/回/節" anywhere in the title (allows prefixes like "怪談上班第1章")
   let m = title.match(/第\s*(\d+)\s*[章話回節话]/);
   if(m) return offset+parseInt(m[1]);
@@ -1679,18 +1792,162 @@ function chapSortKey(title){
   return Infinity;
 }
 
+// Extract a chapter's numeric ordinal from its title — Arabic digits,
+// Chinese numerals, or "Chapter N" (same patterns chapSortKey recognizes) —
+// or null if the title has no recognizable number at all. Unlike
+// chapSortKey this returns the *actual* number, not an offsetted sort key,
+// so it can be used to check for gaps in the numbering.
+function extractChapNum(title){
+  if(!title) return null;
+  let m=title.match(/第\s*(\d+)\s*[章話回節话]/);
+  if(m) return parseInt(m[1]);
+  let m2=title.match(/第\s*([零一二三四五六七八九十百千萬〇壹貳叄肆伍陸柒捌玖]+)\s*[章話回節话]/);
+  if(m2){ const v=chineseToNum(m2[1]); if(!isNaN(v)) return v; }
+  let m3=title.match(/Chapter\s*(\d+)/i);
+  if(m3) return parseInt(m3[1]);
+  let m4=title.match(/(\d+)/);
+  if(m4) return parseInt(m4[1]);
+  return null;
+}
+
+// Look at a novel's 正篇 (non-side-story) chapters and report any gaps in
+// the numbering — e.g. chapters 1、2、4 present → missing [3]. Chapters
+// with no recognizable number, and duplicate numbers, are simply ignored
+// (not treated as gaps). Returns [] when nothing looks missing.
+function findMissingChapterNumbers(n){
+  const nums=(n.chapters||[])
+    .filter(c=>!isSideStory(c))
+    .map(c=>extractChapNum(c.title))
+    .filter(v=>v!=null);
+  if(nums.length<2) return [];
+  const present=new Set(nums);
+  const min=Math.min(...nums), max=Math.max(...nums);
+  const missing=[];
+  for(let i=min;i<=max;i++){ if(!present.has(i)) missing.push(i); }
+  return missing;
+}
+// Formats a missing-chapter warning, e.g. "缺少：第3、7、12章" (capped so it
+// doesn't run on forever if a lot of chapters are missing).
+function missingChaptersMessage(missing){
+  if(!missing.length) return '';
+  const shown=missing.slice(0,12).join('、');
+  const more=missing.length>12?` 等共 ${missing.length} 章`:'';
+  return `⚠️ 偵測到章節編號中間缺少：第 ${shown} 章${more}，建議檢查一下`;
+}
+
 // Chapter indices sorted into "reading order" (matches what the TOC shows):
 // by chapSortKey, with title as a tie-breaker. Shared by every place that
 // needs to know "which chapter comes after which" so numbering stays
 // consistent even when chapters aren't stored in reading order (e.g.
 // side-story chapters imported out of sequence).
+//
+// This is called from the scroll handler (via updateTopBar/updateBottomBar),
+// so it's cached per-novel and only recomputed when the chapter list
+// actually changes (see invalidateChapterOrder below) — otherwise a 300+
+// chapter novel would get a full O(n log n) re-sort on every scroll tick.
+const _sortedChapCache = new WeakMap();
 function getSortedChapterIndices(n){
-  return [...n.chapters.keys()].sort((a,b)=>{
-    const ka=chapSortKey(n.chapters[a].title);
-    const kb=chapSortKey(n.chapters[b].title);
+  const ver = n._chapVer||0;
+  const cached = _sortedChapCache.get(n);
+  if(cached && cached.ver===ver && cached.len===n.chapters.length) return cached.indices;
+  const mainIdx=[], extraIdx=[];
+  n.chapters.forEach((c,i)=>{ (isSideStory(c)?extraIdx:mainIdx).push(i); });
+  mainIdx.sort((a,b)=>{
+    const ka=chapSortKey(n.chapters[a]), kb=chapSortKey(n.chapters[b]);
     if(ka!==kb) return ka-kb;
     return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
   });
+  if(!n.extraManualOrder){
+    // 自動排序：番外照標題數字排（跟正篇邏輯一樣）
+    extraIdx.sort((a,b)=>{
+      const ka=chapSortKey(n.chapters[a]), kb=chapSortKey(n.chapters[b]);
+      if(ka!==kb) return ka-kb;
+      return (n.chapters[a].title||"").localeCompare(n.chapters[b].title||"","zh-TW");
+    });
+  }
+  // 手動排序模式：extraIdx 本來就是照 forEach 走訪陣列的順序建立的，
+  // 也就是番外彼此之間目前在陣列裡的實際相對順序——直接沿用即可。
+  const indices=[...mainIdx, ...extraIdx];
+  _sortedChapCache.set(n,{ver,len:n.chapters.length,indices});
+  return indices;
+}
+// Call whenever a novel's chapters are added, removed, reordered, or
+// retitled, so getSortedChapterIndices recomputes instead of serving a
+// stale cached order.
+function invalidateChapterOrder(n){ if(n) n._chapVer=(n._chapVer||0)+1; }
+
+// Turn manual ordering on/off for just the 番外 chapters (正篇 always stays
+// auto-sorted by title). Turning it ON bakes the current title-based order
+// of the extras into their existing array slots (main chapters' slots are
+// left completely untouched) so the switch doesn't visibly reshuffle
+// anything; after that, ▲▼ swaps extras directly and is never re-baked, so
+// repeatedly toggling never discards a manual arrangement.
+function toggleExtraManualOrder(){
+  if(activeNovel<0) return;
+  const n=novels[activeNovel];
+  if(!n.extraManualOrder){
+    const extraSlots=[];
+    n.chapters.forEach((c,i)=>{ if(isSideStory(c)) extraSlots.push(i); });
+    if(extraSlots.length>1){
+      const origChs=extraSlots.map(i=>n.chapters[i]);
+      const sortedChs=origChs.slice().sort((a,b)=>chapSortKey(a)-chapSortKey(b));
+      const oldToNew=new Map();
+      origChs.forEach((ch,m)=>{ oldToNew.set(extraSlots[m], extraSlots[sortedChs.indexOf(ch)]); });
+      extraSlots.forEach((slot,k)=>{ n.chapters[slot]=sortedChs[k]; });
+      if(n.lastChapter!=null && oldToNew.has(n.lastChapter)) n.lastChapter=oldToNew.get(n.lastChapter);
+      if(activeChapter!=null && oldToNew.has(activeChapter)) activeChapter=oldToNew.get(activeChapter);
+    }
+    n.extraManualOrder=true;
+    showToast('番外已切換為手動排序，用 ▲▼ 調整順序');
+  } else {
+    n.extraManualOrder=false;
+    showToast('番外已切換回依編號自動排序（手動順序仍保留，可再切回來）');
+  }
+  invalidateChapterOrder(n);
+  persist();
+  renderDetailChapList();
+  renderToc();
+}
+
+// Move a 番外 chapter up/down among *other 番外 chapters only* — skips over
+// any 正篇 chapters physically sitting in between, so this never touches
+// where main chapters sit. Only meaningful while extraManualOrder is on.
+function moveSideStory(realIdx, dir){
+  if(activeNovel<0) return;
+  const n=novels[activeNovel];
+  if(!isSideStory(n.chapters[realIdx])) return;
+  let j=realIdx+dir;
+  while(j>=0 && j<n.chapters.length && !isSideStory(n.chapters[j])) j+=dir;
+  if(j<0||j>=n.chapters.length) return;
+  [n.chapters[realIdx], n.chapters[j]] = [n.chapters[j], n.chapters[realIdx]];
+  if(n.lastChapter===realIdx) n.lastChapter=j;
+  else if(n.lastChapter===j) n.lastChapter=realIdx;
+  if(activeChapter===realIdx) activeChapter=j;
+  else if(activeChapter===j) activeChapter=realIdx;
+  invalidateChapterOrder(n);
+  persist();
+  renderDetailChapList();
+  renderToc();
+}
+function moveSideStoryUp(realIdx){ moveSideStory(realIdx,-1); }
+function moveSideStoryDown(realIdx){ moveSideStory(realIdx,1); }
+
+// Insert a brand-new 番外 chapter directly at a given 1-based position
+// *among the existing 番外 chapters* (main chapters' slots are untouched),
+// instead of always appending to the very end and having to walk it into
+// place afterward with ▲▼. Returns the chapter's final physical index.
+function insertSideStoryAt(n, chapterObj, extraPos){
+  const extraSlots=[];
+  n.chapters.forEach((c,i)=>{ if(isSideStory(c)) extraSlots.push(i); });
+  const wanted = Number.isFinite(extraPos) ? Math.round(extraPos) : extraSlots.length+1;
+  const clampedPos = Math.max(1, Math.min(extraSlots.length+1, wanted));
+  const insertAt = clampedPos>extraSlots.length ? n.chapters.length : extraSlots[clampedPos-1];
+  n.chapters.splice(insertAt, 0, chapterObj);
+  // Everything from insertAt onward just shifted down by one slot — keep
+  // "last read" / "currently viewing" pointers on the same chapter.
+  if(n.lastChapter!=null && n.lastChapter>=insertAt) n.lastChapter++;
+  if(activeChapter!=null && activeChapter>=insertAt) activeChapter++;
+  return insertAt;
 }
 
 // Converts a raw chapters-array index into its 1-based position within the
@@ -1704,10 +1961,18 @@ function getChapterDisplayPos(n, rawIdx){
   const pos=sorted.indexOf(rawIdx);
   return pos>=0 ? pos+1 : rawIdx+1;
 }
+// Which tab is showing in the reading page's TOC panel: 'main' or 'extra'
+// (番外). Set explicitly by startReading() to match whichever category the
+// chapter being opened belongs to, so it's always visible/highlighted.
+let tocChapTab = 'main';
+function setTocChapTab(tab){ tocChapTab=tab; renderToc(); }
+
 function renderToc(){
-  const n=novels[activeNovel],list=document.getElementById("tocList");
+  const n=novels[activeNovel],list=document.getElementById("tocItems");
+  const tabsEl=document.getElementById("tocTabs");
   list.innerHTML="";
   if(!n.chapters.length){
+    if(tabsEl) tabsEl.innerHTML="";
     const empty=document.createElement("div");
     empty.style.cssText="font-size:13px;color:var(--ink-3);padding:16px;text-align:center";
     empty.textContent="尚無章節，點擊 ＋ 新增";
@@ -1715,7 +1980,32 @@ function renderToc(){
   }
   // Create sorted index array (sort by chapter number in title)
   const indices=getSortedChapterIndices(n);
-  indices.forEach((realIdx,displayPos)=>{
+  const mainIdxs=indices.filter(i=>!isSideStory(n.chapters[i]));
+  const extraIdxs=indices.filter(i=>isSideStory(n.chapters[i]));
+
+  // Only show tabs (and the 番外 tab) when this novel actually has side stories
+  if(tabsEl){
+    tabsEl.innerHTML="";
+    if(extraIdxs.length){
+      const mkTab=(key,label,count)=>{
+        const b=document.createElement("button");
+        b.className="btn-ghost btn-sm";
+        b.textContent=`${label} (${count})`;
+        b.style.cssText = tocChapTab===key
+          ? "border-radius:999px;padding:4px 14px;font-weight:600;background:var(--ink);color:var(--paper);border:1px solid var(--ink)"
+          : "border-radius:999px;padding:4px 14px;background:var(--paper-2);color:var(--ink-2);border:1px solid var(--paper-3)";
+        b.addEventListener("click",()=>setTocChapTab(key));
+        return b;
+      };
+      tabsEl.appendChild(mkTab('main','正篇',mainIdxs.length));
+      tabsEl.appendChild(mkTab('extra','番外',extraIdxs.length));
+    } else {
+      tocChapTab='main';
+    }
+  }
+
+  const shown = (extraIdxs.length && tocChapTab==='extra') ? extraIdxs : mainIdxs;
+  shown.forEach((realIdx,displayPos)=>{
     const c=n.chapters[realIdx];
     const el=document.createElement("div");
     el.className="toc-item"+(realIdx===activeChapter?" active":"");
@@ -1726,6 +2016,12 @@ function renderToc(){
     el.addEventListener("click",()=>{loadChapter(realIdx);closeToc();});
     list.appendChild(el);
   });
+  if(!shown.length){
+    const empty=document.createElement("div");
+    empty.style.cssText="font-size:13px;color:var(--ink-3);padding:16px;text-align:center";
+    empty.textContent="這個分類目前沒有章節";
+    list.appendChild(empty);
+  }
   // Add chapter buttons at bottom of list
   const btnRow=document.createElement("div");
   btnRow.style.cssText="display:flex;gap:8px;margin:10px 14px";
@@ -1789,8 +2085,15 @@ function toggleToc(){
   const isOpen = sidebar.classList.contains("show");
   sidebar.classList.toggle("show", !isOpen);
   overlay.classList.toggle("show", !isOpen);
-  // When opening, scroll active chapter into view
+  // When opening, make sure the tab matches whichever chapter is currently
+  // being read (it may have moved into the other category via 上/下一章
+  // while the panel was closed), then scroll the active chapter into view.
   if(!isOpen){
+    const n=novels[activeNovel];
+    if(n && n.chapters[activeChapter]){
+      const wantTab = isSideStory(n.chapters[activeChapter]) ? 'extra' : 'main';
+      if(wantTab!==tocChapTab){ tocChapTab=wantTab; renderToc(); }
+    }
     setTimeout(()=>{
       const activeItem = sidebar.querySelector(".toc-item.active");
       if(activeItem){
@@ -2210,9 +2513,6 @@ function getCtx(){
   return`【小說】${n.name}\n【目錄】\n${allTitles}\n\n【當前章節】${c.title||"第"+(activeChapter+1)+"章"}\n【進度】${Math.round((n.scrollPct||0)*100)}%\n【章節內容】\n${(c.content||"").substring(0,contentLimit)}${c.origin?"\n\n【原文】\n"+c.origin.substring(0,originLimit):""}`;
 }
 // ── Lightweight Markdown -> HTML renderer (safe, no external lib) ──
-function escapeHtml(s){
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
 function renderMarkdown(text){
   let html = escapeHtml(text);
 
@@ -2757,9 +3057,84 @@ function initEditSwatches(){
   const wrap=document.getElementById("editColorSwatches");if(!wrap)return;wrap.innerHTML="";
   COVER_COLORS.forEach(c=>{const s=document.createElement("div");s.className="swatch"+(c===selectedColor?" selected":"");s.style.background=c;s.onclick=()=>{selectedColor=c;initEditSwatches();};wrap.appendChild(s);});
 }
+// ══ Export / Import a single novel as a standalone file ══
+// Deliberately excludes personal reading-progress fields (lastChapter,
+// scrollPct, bookmarks, lastRead, lastOpenedAt) — the whole point is that
+// whoever imports this starts with their own fresh progress, completely
+// independent of the exporter's, even if they end up on the same account.
+function exportNovel(idx){
+  const n=novels[idx];
+  if(!n){ showToast("找不到這本小說"); return; }
+  const payload={
+    type:'novel-reader-export',
+    version:1,
+    novel:{
+      name:n.name||'',
+      author:n.author||'',
+      color:n.color||COVER_COLORS[0],
+      coverImg:n.coverImg||null,
+      tags:n.tags||[],
+      extraManualOrder:!!n.extraManualOrder,
+      chapters:(n.chapters||[]).map(c=>({
+        title:c.title||'', content:c.content||'',
+        origin:c.origin||'', origContent:c.origContent||'', origOrigin:c.origOrigin||'',
+        highlights:c.highlights||[], isExtra:c.isExtra,
+      })),
+    },
+  };
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=(n.name||'小說').replace(/[\\/:*?"<>|]/g,'_')+'.nrbook.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  showToast('✅ 已匯出，把這個檔案傳給對方、請他用「＋匯入」載入即可');
+}
+
+function importNovelFile(inputEl){
+  const file=inputEl.files&&inputEl.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=(e)=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      if(!data||data.type!=='novel-reader-export'||!data.novel) throw new Error('bad format');
+      const nd=data.novel;
+      const newNovel={
+        id:genId('nv'),
+        name:nd.name||'匯入的小說',
+        author:nd.author||'',
+        color:nd.color||COVER_COLORS[0],
+        coverImg:nd.coverImg||null,
+        tags:Array.isArray(nd.tags)?nd.tags:[],
+        extraManualOrder:!!nd.extraManualOrder,
+        chapters:(Array.isArray(nd.chapters)?nd.chapters:[]).map(c=>({
+          id:genId('ch'),
+          title:c.title||'', content:c.content||'',
+          origin:c.origin||'', origContent:c.origContent||'', origOrigin:c.origOrigin||'',
+          highlights:Array.isArray(c.highlights)?c.highlights:[], isExtra:c.isExtra,
+        })),
+        bookmarks:[], scrollPct:0, converted:false, lastRead:null,
+      };
+      novels.push(newNovel);
+      persist();
+      renderShelf();
+      showToast('✅ 已匯入「'+newNovel.name+'」（'+newNovel.chapters.length+' 章）');
+      const missing=findMissingChapterNumbers(newNovel);
+      if(missing.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+    }catch(err){
+      console.error('匯入失敗',err);
+      showToast('❌ 匯入失敗，檔案格式不正確或已損毀');
+    }
+    inputEl.value='';
+  };
+  reader.readAsText(file,'utf-8');
+}
+
 function confirmAddNovel(){
   const name=document.getElementById("addName").value.trim();if(!name){alert("請輸入小說名稱");return;}
-  novels.push({name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null,tags:[...tagState.add]});
+  novels.push({id:genId('nv'),name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null,tags:[...tagState.add]});
   persist();closeModal("addModal");renderShelf();
   showToast("📚 「"+name+"」已新增！");
   // 書籍已經建立好了；接著直接跳出新增章節視窗，方便馬上加第一章，
@@ -2782,6 +3157,26 @@ function openChapterModal(novelIdx,chapIdx=-1){
   document.getElementById("chapHasOrigin").checked=!!(c.origin);
   document.getElementById("chapOriginSec").style.display=c.origin?"flex":"none";
   document.getElementById("btnDeleteChap").style.display=isEdit?"flex":"none";
+  // 編輯：沿用這一章目前的分類。新增：預設跟著目前所在的分頁（正篇/番外）。
+  const isExtra = isEdit ? isSideStory(c) : (detailChapTab==='extra');
+  document.getElementById("chapCategoryMain").checked=!isExtra;
+  document.getElementById("chapCategoryExtra").checked=isExtra;
+
+  // 插入位置欄位：只在「新增」+「番外」+「這本小說番外正在手動排序」時才顯示，
+  // 讓新章節可以直接插進正確位置，不用新增完再用 ▲▼ 一格一格搬。
+  const posSection=document.getElementById("chapExtraPosSection");
+  const posInput=document.getElementById("chapExtraPos");
+  const extraCount=n.chapters.filter(ch=>isSideStory(ch)).length;
+  const updatePosVisibility=()=>{
+    const nowExtra=document.getElementById("chapCategoryExtra").checked;
+    const show=!isEdit && nowExtra && !!n.extraManualOrder;
+    posSection.style.display=show?"block":"none";
+    if(show){ posInput.max=String(extraCount+1); posInput.value=String(extraCount+1); }
+  };
+  document.getElementById("chapCategoryMain").onchange=updatePosVisibility;
+  document.getElementById("chapCategoryExtra").onchange=updatePosVisibility;
+  updatePosVisibility();
+
   openModal("chapterModal");
 }
 function openEditModal(novelIdx,chapIdx){openChapterModal(novelIdx,chapIdx);}
@@ -2835,6 +3230,7 @@ async function batchImportChapters(files){
       // Derive chapter title: strip .txt extension
       const title = f.name.replace(/\.txt$/i, '');
       n.chapters.push({
+        id: genId('ch'),
         title,
         content: text,
         origin: '',
@@ -2849,6 +3245,7 @@ async function batchImportChapters(files){
 
   bar.style.width = '100%';
   msg.textContent = `完成！共匯入 ${done} 個章節`;
+  invalidateChapterOrder(n);
   persist();
 
   setTimeout(()=>{
@@ -2858,6 +3255,11 @@ async function batchImportChapters(files){
     const firstNew = n.chapters.length - done;
     if(firstNew >= 0) loadChapter(firstNew);
     showToast('✅ 已匯入 ' + done + ' 個章節');
+    const missing=findMissingChapterNumbers(n);
+    if(missing.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+    const dv4=document.getElementById("viewDetail");
+    if(dv4&&dv4.classList.contains("active")) renderDetailChapList();
+    renderShelf();
   }, 800);
 }
 
@@ -2868,24 +3270,58 @@ function confirmChapter(){
   const title=document.getElementById("chapTitle").value.trim()||"未命名章節";
   const content=document.getElementById("chapContent").value;
   const origin=document.getElementById("chapHasOrigin").checked?document.getElementById("chapOriginContent").value:"";
+  const isExtra=document.getElementById("chapCategoryExtra").checked;
   const n=novels[activeNovel];
-  if(editingChapterIdx>=0){n.chapters[editingChapterIdx]={...n.chapters[editingChapterIdx],title,content,origin};}
-  else{n.chapters.push({title,content,origin});}
+  let targetIdx;
+  if(editingChapterIdx>=0){
+    n.chapters[editingChapterIdx]={...n.chapters[editingChapterIdx],title,content,origin,isExtra};
+    targetIdx=editingChapterIdx;
+  } else {
+    const newChapter={id:genId('ch'),title,content,origin,isExtra};
+    const posSection=document.getElementById("chapExtraPosSection");
+    if(isExtra && n.extraManualOrder && posSection.style.display!=="none"){
+      targetIdx=insertSideStoryAt(n,newChapter,parseInt(document.getElementById("chapExtraPos").value,10));
+    } else {
+      n.chapters.push(newChapter);
+      targetIdx=n.chapters.length-1;
+    }
+  }
+  invalidateChapterOrder(n);
   persist();closeModal("chapterModal");renderToc();
-  const targetIdx=editingChapterIdx>=0?editingChapterIdx:n.chapters.length-1;
   loadChapter(targetIdx);
   showToast(editingChapterIdx>=0?"✅ 章節已更新":"✅ 章節已新增");
-  // Refresh detail page if visible
+  // Refresh detail page if visible, showing whichever tab this chapter belongs to
   const dv2=document.getElementById("viewDetail");
-  if(dv2&&dv2.classList.contains("active")) renderDetailChapList();
+  if(dv2&&dv2.classList.contains("active")){ detailChapTab=isExtra?'extra':'main'; renderDetailChapList(); }
+  renderShelf();
 }
 function deleteChapter(){
   if(activeNovel<0||editingChapterIdx<0)return;
   showConfirm('確定刪除章節「'+(novels[activeNovel].chapters[editingChapterIdx]?.title||'此章節')+'」？', ()=>{
-    novels[activeNovel].chapters.splice(editingChapterIdx,1);
+    const n=novels[activeNovel];
+    const delIdx=editingChapterIdx;
+    n.chapters.splice(delIdx,1);
+    invalidateChapterOrder(n);
+
+    // 刪掉一章之後，後面所有章節的陣列位置都會往前移一格。
+    // 把「上次讀到哪」跟「目前正在看哪一章」的指標一起換算過去，
+    // 讓它們繼續指向同一章內容，而不是悄悄指到移位後、位置相同但
+    // 內容不同的另一章（這就是「已讀第幾章」看起來像重置/不見的原因）。
+    const remap=(idx)=>{
+      if(idx==null||!n.chapters.length) return null;
+      if(idx===delIdx) return Math.max(0, Math.min(delIdx-1, n.chapters.length-1));
+      if(idx>delIdx) return idx-1;
+      return idx;
+    };
+    n.lastChapter=remap(n.lastChapter);
+    activeChapter=remap(activeChapter);
+
     persist();closeModal("chapterModal");renderToc();
-    loadChapter(Math.min(activeChapter,novels[activeNovel].chapters.length-1));
+    if(activeChapter!=null && activeChapter>=0) loadChapter(activeChapter);
     showToast("已刪除章節");
+    const dv3=document.getElementById("viewDetail");
+    if(dv3&&dv3.classList.contains("active")) renderDetailChapList();
+    renderShelf();
   });
 }
 
@@ -3372,17 +3808,33 @@ function hashStr(str){
   for(let i=0;i<str.length;i++){ h=((h<<5)+h+str.charCodeAt(i))|0; }
   return (h>>>0).toString(36);
 }
+// Stable, never-reused id — used as the Firestore document id for novels/chapters
+// so that cloud sync tracks *identity* instead of array position. This means
+// deleting/inserting a chapter in the middle of the list no longer looks like
+// "every chapter after it changed" to the sync diff.
+function genId(prefix){ return prefix+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+// Backfill ids for novels/chapters that predate this feature. Returns true if
+// anything was assigned (caller should persist() in that case).
+function ensureIds(){
+  let changed=false;
+  novels.forEach(n=>{
+    if(!n.id){ n.id=genId('nv'); changed=true; }
+    (n.chapters||[]).forEach(c=>{ if(!c.id){ c.id=genId('ch'); changed=true; } });
+  });
+  return changed;
+}
 function loadSyncMeta(){
-  try{ return JSON.parse(localStorage.getItem('nr3_fbsyncmeta')||'{"novels":[]}'); }catch(e){ return {novels:[]}; }
+  try{ return JSON.parse(localStorage.getItem('nr3_fbsyncmeta')||'{"novels":{}}'); }catch(e){ return {novels:{}}; }
 }
 function saveSyncMeta(m){
   try{ localStorage.setItem('nr3_fbsyncmeta', JSON.stringify(m)); }catch(e){}
 }
 function novelMetaHash(n){
-  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,scrollPct:n.scrollPct||0,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[]}));
+  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,scrollPct:n.scrollPct||0,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder}));
 }
 function chapterHash(c){
-  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||''));
+  const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
+  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||'')+'\u0001'+JSON.stringify(c.highlights||[])+'\u0001'+extraFlag);
 }
 
 // auto=true 時為背景自動同步：不顯示遮罩、不彈確認，只有真的有變更才會顯示提示
@@ -3397,7 +3849,6 @@ async function fbBackup(auto){
   if(!fbUser || !fsProjectId){ if(!auto) showToast('請先輸入密碼連線'); return; }
   const uid = fbUser.uid;
   const syncMeta = loadSyncMeta();
-  const oldNovels = syncMeta.novels || [];
 
   const overlay = document.getElementById('batchOverlay');
   const bar     = document.getElementById('batchBar');
@@ -3424,31 +3875,37 @@ async function fbBackup(auto){
     }
 
     // 1. 比對出真正有變動的項目（新增/修改/刪除），而不是整本刪除重傳
-    const maxLen = Math.max(novels.length, oldNovels.length);
+    //    用「id」而非陣列位置追蹤身份，這樣在小說/章節中間插入或刪除
+    //    也不會讓後面所有項目被誤判成「內容變了」而整批重傳。
+    ensureIds();
+    const oldNovelsMap = syncMeta.novels || {};
+    const curNovelIds = new Set(novels.map(n=>n.id));
     const tasks = [];
-    const newNovelMeta = oldNovels.slice();
-    for(let ni=0; ni<maxLen; ni++){
-      if(ni >= novels.length){
-        tasks.push({type:'deleteNovel', ni});
-        newNovelMeta[ni] = null;
-        continue;
-      }
-      const n = novels[ni];
-      const old = oldNovels[ni] || {metaHash:null, chapterHashes:[]};
-      const mHash = novelMetaHash(n);
-      if(mHash !== old.metaHash) tasks.push({type:'novelMeta', ni});
+    const newNovelMeta = {};
 
-      const oldChapHashes = old.chapterHashes || [];
-      const maxCh = Math.max(n.chapters.length, oldChapHashes.length);
-      const chapterHashes = [];
-      for(let ci=0; ci<maxCh; ci++){
-        if(ci >= n.chapters.length){ tasks.push({type:'deleteChapter', ni, ci}); continue; }
-        const cHash = chapterHash(n.chapters[ci]);
-        chapterHashes[ci] = cHash;
-        if(cHash !== oldChapHashes[ci]) tasks.push({type:'chapter', ni, ci});
-      }
-      newNovelMeta[ni] = {metaHash:mHash, chapterHashes};
+    // 已從本地移除的小說（雲端曾同步過、但現在本地找不到對應 id 了）
+    for(const oldId of Object.keys(oldNovelsMap)){
+      if(!curNovelIds.has(oldId)) tasks.push({type:'deleteNovel', id:oldId});
     }
+
+    novels.forEach(n=>{
+      const old = oldNovelsMap[n.id] || {metaHash:null, chapters:{}};
+      const mHash = novelMetaHash(n);
+      if(mHash !== old.metaHash) tasks.push({type:'novelMeta', id:n.id});
+
+      const oldChapters = old.chapters || {};
+      const curChapIds = new Set(n.chapters.map(c=>c.id));
+      const newChapters = {};
+      n.chapters.forEach(c=>{
+        const cHash = chapterHash(c);
+        newChapters[c.id] = cHash;
+        if(cHash !== oldChapters[c.id]) tasks.push({type:'chapter', novelId:n.id, chapId:c.id});
+      });
+      for(const oldCid of Object.keys(oldChapters)){
+        if(!curChapIds.has(oldCid)) tasks.push({type:'deleteChapter', novelId:n.id, chapId:oldCid});
+      }
+      newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters};
+    });
 
     if(tasks.length===0 && !readTimeChanged){
       // 就算完全沒東西要「推」上去，雲端的閱讀時間仍可能因為其他裝置而更新過，順手拉回本地
@@ -3469,26 +3926,27 @@ async function fbBackup(auto){
     if(!auto) msg.textContent = `同步中...（共 ${total} 項）`;
     await pMap(tasks, async (t)=>{
       if(t.type==='deleteNovel'){
-        await deleteCol(`users/${uid}/novels/n${t.ni}/chapters`);
-        await fsRestDelete(`users/${uid}/novels/n${t.ni}`);
+        await deleteCol(`users/${uid}/novels/n_${t.id}/chapters`);
+        await fsRestDelete(`users/${uid}/novels/n_${t.id}`);
       } else if(t.type==='novelMeta'){
-        const n=novels[t.ni];
-        await fsRestSet(`users/${uid}/novels/n${t.ni}`, {
-          idx: t.ni, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
+        const n=novels.find(x=>x.id===t.id);
+        await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
+          id:n.id, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
           converted:n.converted||false, scrollPct:n.scrollPct||0, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
-          chapterCount:n.chapters.length, tags:n.tags||[],
+          chapterCount:n.chapters.length, tags:n.tags||[], chapterOrder:n.chapters.map(c=>c.id), extraManualOrder:!!n.extraManualOrder,
         });
       } else if(t.type==='chapter'){
-        const n=novels[t.ni], c=n.chapters[t.ci];
+        const n=novels.find(x=>x.id===t.novelId), c=n.chapters.find(x=>x.id===t.chapId);
         const content     = await compressText(c.content     || '');
         const origin      = await compressText(c.origin      || '');
         const origContent = await compressText(c.origContent || '');
         const origOrigin  = await compressText(c.origOrigin  || '');
-        await fsRestSet(`users/${uid}/novels/n${t.ni}/chapters/c${t.ci}`, {
-          idx: t.ci, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
+        await fsRestSet(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`, {
+          id: c.id, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
+          highlights: c.highlights||[], isExtra: c.isExtra,
         });
       } else if(t.type==='deleteChapter'){
-        await fsRestDelete(`users/${uid}/novels/n${t.ni}/chapters/c${t.ci}`);
+        await fsRestDelete(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`);
       }
       done++;
       if(!auto){
@@ -3497,13 +3955,15 @@ async function fbBackup(auto){
       }
     }, 6);
 
-    // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間
+    // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間，
+    //    以及目前小說的 id 順序（還原時要靠這個知道抓哪些文件、依什麼順序組回去）
     await fsRestSet(`users/${uid}`, {
-      version: 4,
+      version: 5,
       timestamp: new Date().toISOString(),
       settings: {...settings},
       userDict: localStorage.getItem('nr3_dict')||'',
       novelCount: novels.length,
+      novelIds: novels.map(n=>n.id),
       readTime: mergedReadTime,
       updatedAt: new Date().toISOString()
     });
@@ -3513,7 +3973,7 @@ async function fbBackup(auto){
     saveReadTimeSyncedSnapshot(mergedReadTime);
     renderReadingStats();
 
-    saveSyncMeta({novels:newNovelMeta.filter((_,i)=>i<novels.length)});
+    saveSyncMeta({novels:newNovelMeta});
 
     const ts = new Date().toLocaleString('zh-TW');
     const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : '更新閱讀時間';
@@ -3572,35 +4032,49 @@ async function _doRestore(){
     }
     const meta = fromFsDoc(metaDoc);
     const novelCount = meta.novelCount || 0;
+    // 新格式的備份會帶 novelIds（依 id 定位文件、不受陣列位置影響）；
+    // 沒有這個欄位代表是這次更新之前建立的舊備份，退回用陣列位置還原，維持相容。
+    const useIdFormat = Array.isArray(meta.novelIds) && meta.novelIds.length>0;
     msg.textContent = `找到 ${novelCount} 本小說，讀取小說資訊...`;
 
     // 2a. 並行讀取所有小說的 meta（最多同時 6 筆）
-    const novelIdxs = Array.from({length: novelCount}, (_,i)=>i);
-    const novelMetas = await pMap(novelIdxs, async (ni)=>{
-      const nDoc = await fsRestGet(`users/${uid}/novels/n${ni}`);
+    const novelRefs = useIdFormat ? meta.novelIds : Array.from({length: novelCount}, (_,i)=>i);
+    const novelMetas = await pMap(novelRefs, async (ref)=>{
+      const path = useIdFormat ? `users/${uid}/novels/n_${ref}` : `users/${uid}/novels/n${ref}`;
+      const nDoc = await fsRestGet(path);
       return nDoc ? fromFsDoc(nDoc) : null;
     }, 6);
     bar.style.width = '20%';
 
     // 2b. 攤平出所有需要讀取的章節工作，統一並行讀取（最多同時 6 筆）
+    // 新格式：依小說 meta 裡的 chapterOrder（章節 id 順序）逐一讀取；
+    // 舊格式：沒有 chapterOrder，退回依陣列位置（0..chapterCount-1）讀取。
     const chapterJobs = [];
     novelMetas.forEach((nData, ni)=>{
       if(!nData) return;
-      const chapCount = nData.chapterCount || 0;
-      for(let ci=0; ci<chapCount; ci++) chapterJobs.push({ni, ci});
+      if(useIdFormat && Array.isArray(nData.chapterOrder)){
+        nData.chapterOrder.forEach((cid,ci)=>chapterJobs.push({ni, ci, chapId:cid}));
+      } else {
+        const chapCount = nData.chapterCount || 0;
+        for(let ci=0; ci<chapCount; ci++) chapterJobs.push({ni, ci, chapId:null});
+      }
     });
     const chaptersByNovel = novelMetas.map(()=>[]);
     let chDone = 0;
     const chTotal = chapterJobs.length || 1;
-    await pMap(chapterJobs, async ({ni, ci})=>{
-      const cDoc = await fsRestGet(`users/${uid}/novels/n${ni}/chapters/c${ci}`);
+    await pMap(chapterJobs, async ({ni, ci, chapId})=>{
+      const nRef = novelRefs[ni];
+      const path = (useIdFormat && chapId!=null)
+        ? `users/${uid}/novels/n_${nRef}/chapters/c_${chapId}`
+        : `users/${uid}/novels/n${nRef}/chapters/c${ci}`;
+      const cDoc = await fsRestGet(path);
       if(cDoc){
         const cData = fromFsDoc(cDoc);
         let content = cData.content || '';
-        // Legacy parts (old format without compression)
+        // Legacy parts（只有舊格式、未壓縮的備份才可能有這個欄位）
         if(!cData.compressed && (cData.parts||1) > 1){
           for(let pi=1; pi<cData.parts; pi++){
-            const pDoc = await fsRestGet(`users/${uid}/novels/n${ni}/chapters/c${ci}/parts/p${pi}`);
+            const pDoc = await fsRestGet(`${path}/parts/p${pi}`);
             if(pDoc){ const pd=fromFsDoc(pDoc); content += pd.content||''; }
           }
         }
@@ -3610,11 +4084,14 @@ async function _doRestore(){
         const finalOrigContent = cData.compressed ? await decompressText(cData.origContent||'') : (cData.origContent||'');
         const finalOrigOrigin  = cData.compressed ? await decompressText(cData.origOrigin||'')  : (cData.origOrigin||'');
         chaptersByNovel[ni][ci] = {
+          id:          cData.id || genId('ch'),
           title:       cData.title  || '',
           content:     finalContent,
           origin:      finalOrigin,
           origContent: finalOrigContent,
           origOrigin:  finalOrigOrigin,
+          highlights:  cData.highlights || [],
+          isExtra:     typeof cData.isExtra==='boolean' ? cData.isExtra : undefined,
         };
       }
       chDone++;
@@ -3628,6 +4105,7 @@ async function _doRestore(){
       if(!nData) return;
       const chapters = (chaptersByNovel[ni]||[]).filter(c=>c!==undefined);
       restoredNovels.push({
+        id:        nData.id || genId('nv'),
         name:      nData.name      || '',
         author:    nData.author    || '',
         color:     nData.color     || COVER_COLORS[0],
@@ -3637,14 +4115,19 @@ async function _doRestore(){
         bookmarks: nData.bookmarks || [],
         lastRead:  nData.lastRead  || null,
         tags:      nData.tags      || [],
+        extraManualOrder: !!nData.extraManualOrder,
         chapters,
       });
     });
 
     novels = restoredNovels;
+    ensureIds(); // 保底：萬一某些欄位仍缺 id，統一補齊
     persist();
     fbDirty = false;
-    saveSyncMeta({novels: novels.map(n=>({metaHash:novelMetaHash(n), chapterHashes:n.chapters.map(chapterHash)}))});
+    saveSyncMeta({novels: Object.fromEntries(novels.map(n=>[
+      n.id,
+      {metaHash:novelMetaHash(n), chapters:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]))}
+    ]))});
     bar.style.width = '90%';
     msg.textContent = '套用設定...';
 
@@ -4165,7 +4648,7 @@ function unwrapMark(markEl){
 }
 
 // ══ Toast ══
-let toastT;function showToast(m){const e=document.getElementById("toast");e.textContent=m;e.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove("show"),2200);}
+let toastT;function showToast(m,duration=2200){const e=document.getElementById("toast");e.textContent=m;e.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove("show"),duration);}
 
 // ══ Init ══
 async function init(){
