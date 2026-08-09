@@ -374,7 +374,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 
 @media(max-width:640px){
   :root{--panel-w:100vw}
-  .pane{padding:20px 18px}
+  .pane{padding:20px 18px 600px}
   .pane+.pane{border-left:none;border-top:1px solid var(--paper-3)}
   .reader-wrap{flex-direction:column}
   .reader-wrap.panel-open{margin-right:0}
@@ -3976,8 +3976,11 @@ function loadSyncMeta(){
 function saveSyncMeta(m){
   try{ localStorage.setItem('nr3_fbsyncmeta', JSON.stringify(m)); }catch(e){}
 }
+// 注意：故意不把「讀到哪一章／滑到多少」算進這個雜湊裡。這兩個是
+// 裝置本機專屬的閱讀進度，不透過雲端同步——這樣同一個帳號在不同裝置
+// 上分別測試/閱讀，才不會互相覆蓋彼此的進度（見 fbBackup / _doRestore）。
 function novelMetaHash(n){
-  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,scrollPct:n.scrollPct||0,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder}));
+  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -4086,7 +4089,7 @@ async function fbBackup(auto){
         const n=novels.find(x=>x.id===t.id);
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
           id:n.id, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
-          converted:n.converted||false, scrollPct:n.scrollPct||0, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
+          converted:n.converted||false, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
           chapterCount:n.chapters.length, tags:n.tags||[], chapterOrder:n.chapters.map(c=>c.id), extraManualOrder:!!n.extraManualOrder,
           chapterHashes:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])),
         });
@@ -4282,6 +4285,22 @@ async function _doRestore(){
     novelMetas.forEach((nData, ni)=>{
       if(!nData) return;
       const chapters = (chaptersByNovel[ni]||[]).filter(c=>c!==undefined);
+      // 閱讀進度（讀到哪一章、滑到多少）是裝置本機專屬的，雲端根本不存這個。
+      // 還原時直接沿用「這台裝置」原本記錄的進度（用章節 id 對回新資料），
+      // 而不是拿雲端的東西蓋過去——這樣同一帳號在不同裝置上各自閱讀/測試，
+      // 才不會因為還原一次就互相干擾到對方的進度。
+      const localNovel = useIdFormat ? localNovelById[novelRefs[ni]] : null;
+      let lastChapter=null;
+      if(localNovel && localNovel.lastChapter!=null){
+        const localLastChap = localNovel.chapters[localNovel.lastChapter];
+        if(localLastChap){
+          const idx=chapters.findIndex(c=>c.id===localLastChap.id);
+          if(idx>=0){
+            lastChapter=idx;
+            chapters[idx]={...chapters[idx], scrollPct:localLastChap.scrollPct||0};
+          }
+        }
+      }
       restoredNovels.push({
         id:        nData.id || genId('nv'),
         name:      nData.name      || '',
@@ -4289,9 +4308,10 @@ async function _doRestore(){
         color:     nData.color     || COVER_COLORS[0],
         coverImg:  nData.coverImg  || null,
         converted: nData.converted || false,
-        scrollPct: nData.scrollPct || 0,
+        scrollPct: localNovel ? (localNovel.scrollPct||0) : 0,
         bookmarks: nData.bookmarks || [],
         lastRead:  nData.lastRead  || null,
+        lastChapter,
         tags:      nData.tags      || [],
         extraManualOrder: !!nData.extraManualOrder,
         chapters,
@@ -4641,6 +4661,16 @@ function searchNav(dir){
 // ══ Text Selection: Bookmark & Highlight ══
 let selRange = null;
 let selText  = '';
+
+// 攔截閱讀內容區塊的長按選單（contextmenu）事件，壓掉手機瀏覽器自己的
+// 選字彈窗（複製/翻譯/搜尋那排）。效果依廠牌/瀏覽器版本略有不同，不保證
+// 100% 完全消失，但大部分情況能明顯減少跟 App 自己的畫線選單疊在一起、
+// 互相搶焦點的狀況。只掛在閱讀內容區，不影響其他地方（例如輸入框）原本
+// 該有的右鍵/長按貼上功能。
+['paneContent','paneOrigin'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('contextmenu', e=>e.preventDefault());
+});
 
 // Show selection menu near selected text
 document.addEventListener('mouseup',  handleSelectionEnd);
