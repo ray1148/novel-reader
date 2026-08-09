@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" translate="no">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="google" content="notranslate">
+<link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjogIuWwj+iqqumWseiugOWKqeaJiyIsICJzaG9ydF9uYW1lIjogIuWwj+iqqumWseiugOWKqeaJiyIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjMWExODE0IiwgInRoZW1lX2NvbG9yIjogIiMxYTE4MTQiLCAiaWNvbnMiOiBbeyJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMDAgMTAwJyUzRSUzQ3JlY3Qgd2lkdGg9JzEwMCcgaGVpZ2h0PScxMDAnIHJ4PScxOCcgZmlsbD0nJTIzMWExODE0Jy8lM0UlM0N0ZXh0IHg9JzUwJyB5PSc2OCcgZm9udC1zaXplPSc1OCcgdGV4dC1hbmNob3I9J21pZGRsZScgZmlsbD0nJTIzZThlMmQ5JyUzRSVGMCU5RiU5MyU5NiUzQy90ZXh0JTNFJTNDL3N2ZyUzRSIsICJzaXplcyI6ICJhbnkiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55IG1hc2thYmxlIn1dfQ==">
 <!-- 加到主畫面後以全螢幕獨立視窗開啟，不顯示網址列 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -176,7 +178,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 /* Reader */
 .reader-wrap{flex:1;display:flex;overflow:hidden;transition:margin-right .25s;min-width:0}
 .reader-wrap.panel-open{margin-right:var(--panel-w)}
-.pane{flex:1;overflow-y:auto;padding:16px 32px 80px;min-width:0;padding-top:16px}
+.pane{flex:1;overflow-y:auto;padding:16px 32px 600px;min-width:0;padding-top:16px}
 .pane-content{font-size:17px;line-height:2.1;white-space:pre-wrap;word-break:break-word;font-family:var(--font-body);max-width:680px;margin:0 auto}
 .pane+.pane{border-left:1px solid var(--paper-3)}
 .pane-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
@@ -508,7 +510,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
             <span class="lang-badge">ZH</span>
           </div>
         </div>
-        <div class="pane-content" id="paneContent"></div>
+        <div class="pane-content notranslate" id="paneContent" translate="no"></div>
       </div>
       <div class="pane" id="paneRight" style="display:none">
         <div class="pane-label"><span>原文</span><span class="lang-badge">EN</span></div>
@@ -960,6 +962,14 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
           <input type="file" accept=".txt" id="chapFile" onchange="handleChapFile(this)">
           📄 點擊或拖曳 .txt 檔案
           <div class="file-name" id="chapFileName"></div>
+        </label>
+      </div>
+      <div class="msection">
+        <label>上傳截圖辨識文字（OCR）<span style="color:var(--ink-3);font-weight:400">（長條圖也可以，可選多張依序辨識、自動接在一起；需要先在設定填 Anthropic API Key）</span></label>
+        <label class="file-drop">
+          <input type="file" accept="image/*" multiple id="chapOcrFiles" onchange="handleChapImagesOCR(this)">
+          🖼 點擊或拖曳截圖（可多選）
+          <div class="file-name" id="chapOcrStatus"></div>
         </label>
       </div>
       <div class="msection">
@@ -1523,7 +1533,6 @@ function renderShelf(){
     progFill.style.width=pct+"%";
     prog.appendChild(progFill);
     cover.appendChild(prog);
-    cover.addEventListener("click",()=>openNovel(i));
     coverWrap.appendChild(cover);
 
     // Menu button
@@ -1551,6 +1560,7 @@ function renderShelf(){
     info.appendChild(metaEl);
     card.appendChild(info);
 
+    card.addEventListener("click",()=>openNovel(i));
     grid.appendChild(card);
   });
 }
@@ -1560,8 +1570,13 @@ function openNovel(idx){
   activeNovel=idx;
   const n=novels[idx];
   showDetail(idx);
-  // Build RAG index in background
-  setTimeout(()=>{ const c=buildRagIndex(idx); console.log('RAG:',c,'chunks'); }, 500);
+  // Build RAG index in background, once the browser is idle (falls back to
+  // a short delay on browsers without requestIdleCallback). buildRagIndex()
+  // itself now skips the work entirely if the index is already up to date,
+  // so repeat visits are cheap regardless.
+  const scheduleRag=()=>{ const c=buildRagIndex(idx); console.log('RAG:',c,'chunks'); };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(scheduleRag,{timeout:1500});
+  else setTimeout(scheduleRag,500);
 }
 
 function showDetail(idx){
@@ -1635,7 +1650,7 @@ function renderDetailChapList(){
   }
   if(warnEl){
     const missing=findMissingChapterNumbers(n);
-    if(missing.length){
+    if(missing.leading.length||missing.internal.length){
       warnEl.style.cssText="display:block;margin:8px 0;padding:8px 12px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:12.5px;line-height:1.5";
       warnEl.textContent=missingChaptersMessage(missing);
     } else {
@@ -1729,8 +1744,12 @@ function startReading(chapIdx){
   document.getElementById("novelTitleBar").textContent=n.name;
   showView("viewNovel");
   tocChapTab = isSideStory(n.chapters[chapIdx]) ? 'extra' : 'main';
-  renderToc();
   loadChapter(chapIdx);
+  // Rebuilding the TOC list means creating up to hundreds of DOM nodes for a
+  // long novel — pure prep work for a sidebar that's closed right now.
+  // Defer it so it never blocks the chapter itself from appearing right
+  // away (this was the main cause of the occasional lag on "繼續閱讀").
+  setTimeout(renderToc, 0);
 }
 
 function continueReading(){
@@ -1810,29 +1829,39 @@ function extractChapNum(title){
   return null;
 }
 
-// Look at a novel's 正篇 (non-side-story) chapters and report any gaps in
-// the numbering — e.g. chapters 1、2、4 present → missing [3]. Chapters
-// with no recognizable number, and duplicate numbers, are simply ignored
-// (not treated as gaps). Returns [] when nothing looks missing.
+// Look at a novel's 正篇 (non-side-story) chapters and report gaps in the
+// numbering, split into two kinds:
+// - internal: a gap between the lowest and highest number present
+//   (e.g. 1、2、4 present → internal=[3])
+// - leading: the lowest number present isn't 1 (e.g. starts at 7 →
+//   leading=[1,2,3,4,5,6]) — flagged more gently since some books
+//   genuinely aren't archived from chapter 1.
+// Chapters with no recognizable number, and duplicate numbers, are simply
+// ignored (not treated as gaps).
 function findMissingChapterNumbers(n){
   const nums=(n.chapters||[])
     .filter(c=>!isSideStory(c))
     .map(c=>extractChapNum(c.title))
     .filter(v=>v!=null);
-  if(nums.length<2) return [];
+  if(!nums.length) return {leading:[],internal:[]};
   const present=new Set(nums);
   const min=Math.min(...nums), max=Math.max(...nums);
-  const missing=[];
-  for(let i=min;i<=max;i++){ if(!present.has(i)) missing.push(i); }
-  return missing;
+  const leading=[];
+  if(min>1){ for(let i=1;i<min;i++) leading.push(i); }
+  const internal=[];
+  if(nums.length>=2){ for(let i=min;i<=max;i++){ if(!present.has(i)) internal.push(i); } }
+  return {leading,internal};
 }
-// Formats a missing-chapter warning, e.g. "缺少：第3、7、12章" (capped so it
-// doesn't run on forever if a lot of chapters are missing).
-function missingChaptersMessage(missing){
-  if(!missing.length) return '';
-  const shown=missing.slice(0,12).join('、');
-  const more=missing.length>12?` 等共 ${missing.length} 章`:'';
-  return `⚠️ 偵測到章節編號中間缺少：第 ${shown} 章${more}，建議檢查一下`;
+// Formats a missing-chapter warning from findMissingChapterNumbers()'s
+// result. Returns '' when nothing looks missing.
+function missingChaptersMessage(result){
+  const {leading=[],internal=[]}=result||{};
+  const fmt=(arr)=>arr.length<=12?arr.join('、'):arr.slice(0,12).join('、')+` 等共 ${arr.length} 章`;
+  const bits=[];
+  if(leading.length) bits.push(`前面第 ${fmt(leading)} 章沒有偵測到（若這本書本來就不是從第1章開始收錄可忽略）`);
+  if(internal.length) bits.push(`中間缺少第 ${fmt(internal)} 章`);
+  if(!bits.length) return '';
+  return '⚠️ '+bits.join('；')+'，建議檢查一下';
 }
 
 // Chapter indices sorted into "reading order" (matches what the TOC shows):
@@ -3122,7 +3151,7 @@ function importNovelFile(inputEl){
       renderShelf();
       showToast('✅ 已匯入「'+newNovel.name+'」（'+newNovel.chapters.length+' 章）');
       const missing=findMissingChapterNumbers(newNovel);
-      if(missing.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+      if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
     }catch(err){
       console.error('匯入失敗',err);
       showToast('❌ 匯入失敗，檔案格式不正確或已損毀');
@@ -3152,6 +3181,7 @@ function openChapterModal(novelIdx,chapIdx=-1){
   document.getElementById("chapTitle").value=c.title||"";
   document.getElementById("chapContent").value=c.content||"";
   document.getElementById("chapFileName").textContent="";
+  document.getElementById("chapOcrStatus").textContent="";
   document.getElementById("chapOriginFileName").textContent="";
   document.getElementById("chapOriginContent").value=c.origin||"";
   document.getElementById("chapHasOrigin").checked=!!(c.origin);
@@ -3191,6 +3221,123 @@ async function handleChapOriginFile(inp){
   const f=inp.files[0];if(!f)return;
   document.getElementById("chapOriginFileName").textContent="✓ "+f.name;
   document.getElementById("chapOriginContent").value=await readFile(f);
+}
+
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+}
+function loadImage(src){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=()=>reject(new Error('圖片讀取失敗'));
+    img.src=src;
+  });
+}
+// 把過長的長條圖切成好幾段 PNG（data URL）。Vision API 收到過大的圖片時，
+// 內部通常會先自動縮小尺寸再辨識——長條圖本來就窄長，縮小後文字會糊到
+// 認不出來（跟稍早在對話裡看到的縮圖模糊是同樣的原因）。切成每段不超過
+// maxSegHeight，就不會被內部再壓縮，辨識出來的文字會準確很多。
+// 段落之間留一點重疊（overlap），避免正好有一行字被切在兩段中間。
+async function sliceTallImage(file, maxSegHeight=1400, overlap=60){
+  const dataUrl=await fileToDataUrl(file);
+  const img=await loadImage(dataUrl);
+  const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+  if(h<=maxSegHeight) return [dataUrl];
+  const segs=[];
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  let top=0;
+  while(top<h){
+    const segH=Math.min(maxSegHeight, h-top);
+    canvas.width=w; canvas.height=segH;
+    ctx.clearRect(0,0,w,segH);
+    ctx.drawImage(img, 0, top, w, segH, 0, 0, w, segH);
+    segs.push(canvas.toDataURL('image/png'));
+    if(top+segH>=h) break;
+    top+=maxSegHeight-overlap;
+  }
+  return segs;
+}
+
+// Sends one screenshot to Claude (vision) and asks it to transcribe just the
+// novel body text — skipping site chrome, buttons, ads, comment sections
+// etc — while keeping original paragraph breaks.
+async function ocrImageToText(dataUrl){
+  const key=getApiKey();
+  if(!key) throw new Error('請先在設定中填入 Anthropic API Key');
+  const match=dataUrl.match(/^data:(image\/[\w+.-]+);base64,(.*)$/);
+  if(!match) throw new Error('圖片格式不支援');
+  const [,mediaType,data]=match;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:4096,
+      messages:[{
+        role:'user',
+        content:[
+          {type:'image',source:{type:'base64',media_type:mediaType,data}},
+          {type:'text',text:'請把這張截圖裡的小說正文文字，逐字準確地轉成純文字輸出。只要正文內容本身，不要包含網站介面上的按鈕、廣告、章節連結列表、留言區、浮水印等雜訊文字。保留原本的段落換行，不要幫我加標點以外的任何修改。不要加任何說明、前言、引號或摘要，直接輸出轉錄後的正文文字。'}
+        ]
+      }]
+    })
+  });
+  const d=await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return (d.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+}
+
+// Handles one or more screenshot uploads (e.g. a long chapter split across
+// several strip screenshots). Each image is first sliced (if it's tall) so
+// the API always sees full-resolution pieces, then every slice is OCR'd in
+// order — slices from the same image are stitched back together tightly
+// (they're one continuous chapter cut apart by us), while separate uploaded
+// images are joined with a blank line.
+async function handleChapImagesOCR(inputEl){
+  const files=Array.from(inputEl.files||[]);
+  if(!files.length) return;
+  if(!getApiKey()){
+    showToast('請先到設定頁填入 Anthropic API Key 才能用截圖辨識');
+    inputEl.value='';
+    return;
+  }
+  const statusEl=document.getElementById('chapOcrStatus');
+  const contentEl=document.getElementById('chapContent');
+  let combined=contentEl.value?contentEl.value.trimEnd():'';
+  for(let i=0;i<files.length;i++){
+    let segs;
+    try{
+      segs=await sliceTallImage(files[i]);
+    }catch(err){
+      console.error('圖片切割失敗',err);
+      showToast('第 '+(i+1)+' 張圖片讀取失敗：'+err.message,4000);
+      continue;
+    }
+    let fileText='';
+    for(let s=0;s<segs.length;s++){
+      if(statusEl) statusEl.textContent = segs.length>1
+        ? `辨識中... 第 ${i+1}/${files.length} 張圖（切成 ${segs.length} 段，第 ${s+1} 段）`
+        : `辨識中... (${i+1}/${files.length})`;
+      try{
+        const text=await ocrImageToText(segs[s]);
+        fileText += (fileText?'\n':'') + text;
+      }catch(err){
+        console.error('OCR 失敗',err);
+        showToast('第 '+(i+1)+' 張圖第 '+(s+1)+' 段辨識失敗：'+err.message,4000);
+      }
+    }
+    combined+=(combined?'\n\n':'')+fileText;
+    contentEl.value=combined; // 邊辨識邊填入，讓使用者能看到進度
+  }
+  if(statusEl) statusEl.textContent=files.length>1?`✓ 已辨識 ${files.length} 張截圖，請檢查內容`:'✓ 已辨識完成，請檢查內容';
+  inputEl.value='';
 }
 // ── Batch chapter import ──
 function initBatchUpload(){
@@ -3256,7 +3403,7 @@ async function batchImportChapters(files){
     if(firstNew >= 0) loadChapter(firstNew);
     showToast('✅ 已匯入 ' + done + ' 個章節');
     const missing=findMissingChapterNumbers(n);
-    if(missing.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+    if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
     const dv4=document.getElementById("viewDetail");
     if(dv4&&dv4.classList.contains("active")) renderDetailChapList();
     renderShelf();
@@ -4245,6 +4392,19 @@ function buildRagIndex(novelIdx){
   const n   = novels[novelIdx];
   if(!n) return;
 
+  // Skip rebuilding if we already have an up-to-date index for this exact
+  // set of chapters. This used to unconditionally re-run on every single
+  // detail-page visit (via openNovel), redoing a full synchronous pass over
+  // every chapter's text (tokenizing + IDF) even when nothing had changed —
+  // that's what caused "繼續閱讀" to occasionally feel laggy right after
+  // entering from the shelf: the rebuild was blocking the main thread right
+  // when the click needed to be handled.
+  const ver = n._chapVer||0;
+  const existing = ragIndex[key];
+  if(existing && existing.chapVer===ver && existing.chapCount===n.chapters.length){
+    return existing.chunks.length;
+  }
+
   const chunks = [];
   n.chapters.forEach((chap, chapIdx)=>{
     const text = chap.content || '';
@@ -4277,7 +4437,7 @@ function buildRagIndex(novelIdx){
 
   // Clear old positional key if exists (migration)
   delete ragIndex['n'+novelIdx];
-  ragIndex[key] = { chunks, idf };
+  ragIndex[key] = { chunks, idf, chapVer:ver, chapCount:n.chapters.length };
   console.log(`RAG [${key}]: ${chunks.length} chunks`);
   return chunks.length;
 }
