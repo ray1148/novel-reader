@@ -4038,7 +4038,7 @@ async function fbBackup(auto){
     novels.forEach(n=>{
       const old = oldNovelsMap[n.id] || {metaHash:null, chapters:{}};
       const mHash = novelMetaHash(n);
-      if(mHash !== old.metaHash) tasks.push({type:'novelMeta', id:n.id});
+      let needsMetaUpload = mHash !== old.metaHash;
 
       const oldChapters = old.chapters || {};
       const curChapIds = new Set(n.chapters.map(c=>c.id));
@@ -4046,11 +4046,18 @@ async function fbBackup(auto){
       n.chapters.forEach(c=>{
         const cHash = chapterHash(c);
         newChapters[c.id] = cHash;
-        if(cHash !== oldChapters[c.id]) tasks.push({type:'chapter', novelId:n.id, chapId:c.id});
+        if(cHash !== oldChapters[c.id]){
+          tasks.push({type:'chapter', novelId:n.id, chapId:c.id});
+          needsMetaUpload = true; // novelMeta 裡的 chapterHashes 對照表也要跟著更新
+        }
       });
       for(const oldCid of Object.keys(oldChapters)){
-        if(!curChapIds.has(oldCid)) tasks.push({type:'deleteChapter', novelId:n.id, chapId:oldCid});
+        if(!curChapIds.has(oldCid)){
+          tasks.push({type:'deleteChapter', novelId:n.id, chapId:oldCid});
+          needsMetaUpload = true;
+        }
       }
+      if(needsMetaUpload) tasks.push({type:'novelMeta', id:n.id});
       newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters};
     });
 
@@ -4081,6 +4088,7 @@ async function fbBackup(auto){
           id:n.id, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
           converted:n.converted||false, scrollPct:n.scrollPct||0, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
           chapterCount:n.chapters.length, tags:n.tags||[], chapterOrder:n.chapters.map(c=>c.id), extraManualOrder:!!n.extraManualOrder,
+          chapterHashes:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])),
         });
       } else if(t.type==='chapter'){
         const n=novels.find(x=>x.id===t.novelId), c=n.chapters.find(x=>x.id===t.chapId);
@@ -4196,19 +4204,42 @@ async function _doRestore(){
     // 2b. 攤平出所有需要讀取的章節工作，統一並行讀取（最多同時 6 筆）
     // 新格式：依小說 meta 裡的 chapterOrder（章節 id 順序）逐一讀取；
     // 舊格式：沒有 chapterOrder，退回依陣列位置（0..chapterCount-1）讀取。
+    //
+    // 效能優化：novelMeta 裡帶了每章的雜湊值（chapterHashes）。如果本機已
+    // 經有這本小說、而且某一章的雜湊值跟遠端一樣，代表內容根本沒變過，
+    // 直接沿用本機資料即可，不用整章重新下載/解壓縮——這樣還原就跟備份
+    // 一樣，只真正處理有變動的部分，而不是每次都整批全部重抓一次。
+    const localNovelById = {};
+    novels.forEach(n=>{ if(n.id) localNovelById[n.id]=n; });
+
     const chapterJobs = [];
+    const chaptersByNovel = novelMetas.map(()=>[]);
+    let reusedCount = 0;
     novelMetas.forEach((nData, ni)=>{
       if(!nData) return;
+      const nRef = novelRefs[ni];
+      const localNovel = useIdFormat ? localNovelById[nRef] : null;
       if(useIdFormat && Array.isArray(nData.chapterOrder)){
-        nData.chapterOrder.forEach((cid,ci)=>chapterJobs.push({ni, ci, chapId:cid}));
+        nData.chapterOrder.forEach((cid,ci)=>{
+          const remoteHash = nData.chapterHashes ? nData.chapterHashes[cid] : null;
+          const localChap = localNovel ? localNovel.chapters.find(c=>c.id===cid) : null;
+          if(localChap && remoteHash && chapterHash(localChap)===remoteHash){
+            chaptersByNovel[ni][ci] = localChap; // 內容沒變，直接沿用，不用下載
+            reusedCount++;
+          } else {
+            chapterJobs.push({ni, ci, chapId:cid});
+          }
+        });
       } else {
         const chapCount = nData.chapterCount || 0;
         for(let ci=0; ci<chapCount; ci++) chapterJobs.push({ni, ci, chapId:null});
       }
     });
-    const chaptersByNovel = novelMetas.map(()=>[]);
+    bar.style.width = '20%';
+
     let chDone = 0;
     const chTotal = chapterJobs.length || 1;
+    if(reusedCount) msg.textContent = `${reusedCount} 章內容沒變，直接沿用；下載其餘章節中...`;
     await pMap(chapterJobs, async ({ni, ci, chapId})=>{
       const nRef = novelRefs[ni];
       const path = (useIdFormat && chapId!=null)
