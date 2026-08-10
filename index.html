@@ -3979,8 +3979,17 @@ function saveSyncMeta(m){
 // 注意：故意不把「讀到哪一章／滑到多少」算進這個雜湊裡。這兩個是
 // 裝置本機專屬的閱讀進度，不透過雲端同步——這樣同一個帳號在不同裝置
 // 上分別測試/閱讀，才不會互相覆蓋彼此的進度（見 fbBackup / _doRestore）。
-function novelMetaHash(n){
-  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder}));
+//
+// chapterHashMap（可選）：呼叫端如果已經算過每章的雜湊值，可以直接傳進來
+// 避免重算一次；沒傳的話會自己算。這個對照表會被摺進指紋裡，確保只要
+// novelMeta 需要重傳，裡面帶的 chapterHashes（還原時用來判斷「這章沒變、
+// 不用下載」的依據）一定是最新、完整的——包含它第一次被加進來時，逼所有
+// 舊資料自動觸發一次性重新上傳補齊，不會有「章節從沒變過、所以對照表裡
+// 從來沒它」的漏洞。
+function novelMetaHash(n, chapterHashMap){
+  const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
+  const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
+  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -4040,26 +4049,27 @@ async function fbBackup(auto){
 
     novels.forEach(n=>{
       const old = oldNovelsMap[n.id] || {metaHash:null, chapters:{}};
-      const mHash = novelMetaHash(n);
-      let needsMetaUpload = mHash !== old.metaHash;
-
       const oldChapters = old.chapters || {};
       const curChapIds = new Set(n.chapters.map(c=>c.id));
       const newChapters = {};
+      let chaptersChanged = false;
       n.chapters.forEach(c=>{
         const cHash = chapterHash(c);
         newChapters[c.id] = cHash;
         if(cHash !== oldChapters[c.id]){
           tasks.push({type:'chapter', novelId:n.id, chapId:c.id});
-          needsMetaUpload = true; // novelMeta 裡的 chapterHashes 對照表也要跟著更新
+          chaptersChanged = true; // novelMeta 裡的 chapterHashes 對照表也要跟著更新
         }
       });
       for(const oldCid of Object.keys(oldChapters)){
         if(!curChapIds.has(oldCid)){
           tasks.push({type:'deleteChapter', novelId:n.id, chapId:oldCid});
-          needsMetaUpload = true;
+          chaptersChanged = true;
         }
       }
+
+      const mHash = novelMetaHash(n, newChapters);
+      const needsMetaUpload = (mHash !== old.metaHash) || chaptersChanged;
       if(needsMetaUpload) tasks.push({type:'novelMeta', id:n.id});
       newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters};
     });
