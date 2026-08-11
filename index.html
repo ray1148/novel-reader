@@ -2279,6 +2279,7 @@ let autoAdvanceLock = false;
 // setHeadersHidden removed (replaced by tap-to-show UI)
 document.getElementById("paneLeft").addEventListener("scroll",function(){
   if(activeNovel<0)return;
+  const prevScrollY = lastScrollY;
   const pct=this.scrollHeight>this.clientHeight?this.scrollTop/(this.scrollHeight-this.clientHeight):0;
   const c=novels[activeNovel]?.chapters[activeChapter];
   if(c) c.scrollPct=pct;
@@ -2289,14 +2290,17 @@ document.getElementById("paneLeft").addEventListener("scroll",function(){
   const pctEl=document.getElementById("rbPct");
   if(slider&&uiVisible){ slider.value=Math.round(pct*100); if(pctEl) pctEl.textContent=Math.round(pct*100)+"%"; }
   updateBottomBarScroll();
-  lastScrollY = this.scrollTop;
 
   // Auto-advance: scrolling to the very bottom of a chapter loads the next one.
-  // Guarded against the programmatic scroll-restore that runs right after
-  // loadChapter() (so resuming near the end of a chapter doesn't instantly skip it).
+  // Only counts while actively scrolling *down* — otherwise resuming a
+  // chapter whose saved position already happens to sit near the bottom
+  // (e.g. you auto-advanced from it before, then came back to look at it)
+  // would re-trigger the jump on literally any scroll event, up or down,
+  // even without the user meaning to leave the chapter.
   const scrollable=this.scrollHeight>this.clientHeight;
   const nearBottom=this.scrollHeight-this.scrollTop-this.clientHeight<32;
-  if(scrollable && nearBottom && !autoAdvanceLock && Date.now()-chapterLoadTime>700){
+  const scrollingDown=this.scrollTop>prevScrollY;
+  if(scrollable && nearBottom && scrollingDown && !autoAdvanceLock && Date.now()-chapterLoadTime>700){
     const nextIdx=getNextChapterIdx();
     if(nextIdx>=0){
       autoAdvanceLock=true;
@@ -2306,6 +2310,7 @@ document.getElementById("paneLeft").addEventListener("scroll",function(){
       setTimeout(()=>{autoAdvanceLock=false;},1000);
     }
   }
+  lastScrollY = this.scrollTop;
 });
 function updateTopBar(){
   if(activeNovel<0)return;
@@ -2726,7 +2731,7 @@ function insertInlineImages(inp){
   const ta = document.getElementById("chapContent");
   let loaded = 0;
   files.forEach(f => {
-    resizeImage(f, 1400, 1400, 0.90).then(data=>{
+    resizeImage(f, 1100, 1100, 0.85).then(data=>{
       const tag = `
 [IMG:${data}]
 `;
@@ -2740,6 +2745,28 @@ function insertInlineImages(inp){
 }
 
 // ── Render mixed text+image+color content ──
+// 把章節內文裡的 [IMG:data:...] 內嵌圖片抽出來，換成小小的 [IMG:ref:id]
+// 參照標記。id 是圖片內容本身的雜湊值——同一張圖永遠對到同一個 id，
+// 內容不變就不會被當成新圖重傳，圖片變了 id 也會跟著變。
+// 用在雲端同步：把圖片拆成各自獨立的 Firestore 文件上傳，這樣單一章節
+// 不會因為裡面塞了好幾張圖、內文字串爆量而整個超過文件大小上限同步失敗。
+function extractInlineImages(content){
+  const images = [];
+  const text = (content||'').replace(/\[IMG:(data:[^\]]+)\]/g, (match, data)=>{
+    const id = 'img_'+hashStr(data);
+    images.push({id, data});
+    return `[IMG:ref:${id}]`;
+  });
+  return {text, images};
+}
+// 還原用：把 [IMG:ref:id] 參照標記換回真正的圖片資料。拿不到的（例如那張
+// 圖片同步失敗過、或文件不存在）就直接拿掉標記，不會顯示壞掉的圖示。
+function reinsertInlineImages(content, imageMap){
+  return (content||'').replace(/\[IMG:ref:([^\]]+)\]/g, (match, id)=>{
+    return imageMap && imageMap[id] ? `[IMG:${imageMap[id]}]` : '';
+  });
+}
+
 function renderContentSegment(target, text){
   const parts = text.split(/(\[IMG:[^\]]+\])/);
   parts.forEach(part => {
@@ -3989,7 +4016,7 @@ function saveSyncMeta(m){
 function novelMetaHash(n, chapterHashMap){
   const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
   const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
-  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',coverImg:n.coverImg||null,converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
+  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -4071,7 +4098,15 @@ async function fbBackup(auto){
       const mHash = novelMetaHash(n, newChapters);
       const needsMetaUpload = (mHash !== old.metaHash) || chaptersChanged;
       if(needsMetaUpload) tasks.push({type:'novelMeta', id:n.id});
-      newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters};
+
+      // 封面圖片拆成獨立的文件、獨立比對——這樣萬一某張封面太大導致上傳
+      // 失敗，只會是那張封面沒同步到，不會連累 chapterHashes、書籤、標籤
+      // 這些小說本身的資料也跟著同步失敗（Firestore 單一文件有大小上限，
+      // 圖片跟其他資料混在同一份文件裡風險比較高）。
+      const coverHash = n.coverImg ? hashStr(n.coverImg) : null;
+      if(coverHash !== (old.coverHash||null)) tasks.push({type:'coverImg', id:n.id});
+
+      newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters, coverHash};
     });
 
     if(tasks.length===0 && !readTimeChanged){
@@ -4090,22 +4125,53 @@ async function fbBackup(auto){
     // 2. 只上傳/刪除真正變動的部分（最多同時 6 筆並行，加快大量章節時的速度）
     let done=0;
     const total=tasks.length;
+    const coverSyncFailed=[]; // 收集封面圖片同步失敗的小說名稱，最後統一提示，不中斷其他同步
+    const inlineImgSyncFailed=[]; // 收集內嵌圖片同步失敗的章節標題
     if(!auto) msg.textContent = `同步中...（共 ${total} 項）`;
     await pMap(tasks, async (t)=>{
       if(t.type==='deleteNovel'){
         await deleteCol(`users/${uid}/novels/n_${t.id}/chapters`);
+        await fsRestDelete(`users/${uid}/novels/n_${t.id}/cover/img`).catch(()=>{}); // 可能本來就沒有封面，忽略失敗
         await fsRestDelete(`users/${uid}/novels/n_${t.id}`);
       } else if(t.type==='novelMeta'){
         const n=novels.find(x=>x.id===t.id);
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
-          id:n.id, name:n.name||'', author:n.author||'', color:n.color||'', coverImg:n.coverImg||null,
+          id:n.id, name:n.name||'', author:n.author||'', color:n.color||'',
           converted:n.converted||false, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
           chapterCount:n.chapters.length, tags:n.tags||[], chapterOrder:n.chapters.map(c=>c.id), extraManualOrder:!!n.extraManualOrder,
           chapterHashes:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])),
+          coverHash: n.coverImg ? hashStr(n.coverImg) : null,
         });
+      } else if(t.type==='coverImg'){
+        const n=novels.find(x=>x.id===t.id);
+        try{
+          if(n.coverImg) await fsRestSet(`users/${uid}/novels/n_${t.id}/cover/img`, {data:n.coverImg});
+          else await fsRestDelete(`users/${uid}/novels/n_${t.id}/cover/img`);
+        }catch(err){
+          // 圖片太大（Firestore 單一文件上限 1MiB）等問題，只讓這張封面失敗，
+          // 不要拋出去把整個 pMap／整批同步一起搞失敗。把 coverHash 退回舊值，
+          // 這樣下次同步還會再試一次，不會因為雜湊值已經算成新的而被誤判成
+          // 「其實已經同步過了」。
+          console.error('封面圖片同步失敗，已略過（不影響其他資料）：', err);
+          coverSyncFailed.push(n.name||'(未命名)');
+          if(newNovelMeta[t.id]) newNovelMeta[t.id].coverHash = oldNovelsMap[t.id]?.coverHash || null;
+        }
       } else if(t.type==='chapter'){
         const n=novels.find(x=>x.id===t.novelId), c=n.chapters.find(x=>x.id===t.chapId);
-        const content     = await compressText(c.content     || '');
+        const {text:contentPlaceholders, images}=extractInlineImages(c.content||'');
+
+        // 內嵌圖片各自獨立上傳，互相隔離——單一張圖太大失敗，只有那張圖
+        // 沒同步到，不會拖累同一章其他圖片、也不會拖累章節文字本身。
+        await pMap(images, async (img)=>{
+          try{
+            await fsRestSet(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images/${img.id}`, {data:img.data});
+          }catch(err){
+            console.error('章節內嵌圖片同步失敗，已略過（不影響其他資料）：', err);
+            inlineImgSyncFailed.push(c.title||'未命名章節');
+          }
+        }, 3);
+
+        const content     = await compressText(contentPlaceholders);
         const origin      = await compressText(c.origin      || '');
         const origContent = await compressText(c.origContent || '');
         const origOrigin  = await compressText(c.origOrigin  || '');
@@ -4114,6 +4180,7 @@ async function fbBackup(auto){
           highlights: c.highlights||[], isExtra: c.isExtra,
         });
       } else if(t.type==='deleteChapter'){
+        await deleteCol(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images`).catch(()=>{});
         await fsRestDelete(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`);
       }
       done++;
@@ -4150,6 +4217,15 @@ async function fbBackup(auto){
       msg.textContent = '同步完成！' + ts;
       setTimeout(()=>{ overlay.style.display='none'; }, 1200);
       showToast(`☁ 同步成功！（${summary}）`);
+    }
+    if(coverSyncFailed.length){
+      // 不管手動還是自動同步，這個都要讓使用者知道——這是唯一會靜默失敗
+      // 的部分，圖片太大時使用者完全不會知道封面沒同步上去，除非講清楚。
+      setTimeout(()=>showToast('⚠️ 「'+coverSyncFailed.slice(0,3).join('、')+(coverSyncFailed.length>3?' 等':'')+'」封面圖片太大，同步失敗，可以換一張小一點的圖', 6000), 1500);
+    }
+    if(inlineImgSyncFailed.length){
+      const uniq=[...new Set(inlineImgSyncFailed)];
+      setTimeout(()=>showToast('⚠️ 「'+uniq.slice(0,3).join('、')+(uniq.length>3?' 等':'')+'」章節裡有圖片太大，同步失敗，該章其餘內容不受影響', 6000), 2200);
     }
     // auto=true (background auto-sync) stays silent — no toast — status is
     // still recorded via setFbStatus below for anyone who opens Settings.
@@ -4225,6 +4301,28 @@ async function _doRestore(){
     const localNovelById = {};
     novels.forEach(n=>{ if(n.id) localNovelById[n.id]=n; });
 
+    // 封面圖片是獨立文件、獨立抓取：沒變就沿用本機的（不用重下載），
+    // 抓取失敗（例如那時候上傳失敗、文件根本不存在）也只是這張封面沒有，
+    // 用 try/catch 包起來，不會讓整個還原流程中斷。
+    const coverImgByNovel = novelMetas.map((nData, ni)=>{
+      const localNovel = useIdFormat ? localNovelById[novelRefs[ni]] : null;
+      return localNovel ? (localNovel.coverImg||null) : null; // 預設先沿用本機的
+    });
+    await pMap(novelMetas.map((nData,ni)=>({nData,ni})), async ({nData,ni})=>{
+      if(!nData || !useIdFormat) return;
+      const localNovel = localNovelById[novelRefs[ni]];
+      const localCoverHash = localNovel && localNovel.coverImg ? hashStr(localNovel.coverImg) : null;
+      if(!nData.coverHash){ coverImgByNovel[ni] = null; return; } // 雲端這本沒有封面
+      if(localCoverHash === nData.coverHash) return; // 沒變，沿用本機的（已經是預設值）
+      try{
+        const coverDoc = await fsRestGet(`users/${uid}/novels/n_${novelRefs[ni]}/cover/img`);
+        coverImgByNovel[ni] = coverDoc ? (fromFsDoc(coverDoc).data || null) : null;
+      }catch(err){
+        console.error('封面圖片下載失敗，沿用本機原本的（如果有的話）：', err);
+        // 保留預設值（本機原本的封面），不中斷還原
+      }
+    }, 6);
+
     const chapterJobs = [];
     const chaptersByNovel = novelMetas.map(()=>[]);
     let reusedCount = 0;
@@ -4270,10 +4368,28 @@ async function _doRestore(){
           }
         }
         // Decompress if needed
-        const finalContent     = cData.compressed ? await decompressText(content)              : content;
+        let finalContent       = cData.compressed ? await decompressText(content)              : content;
         const finalOrigin      = cData.compressed ? await decompressText(cData.origin||'')     : (cData.origin||'');
         const finalOrigContent = cData.compressed ? await decompressText(cData.origContent||'') : (cData.origContent||'');
         const finalOrigOrigin  = cData.compressed ? await decompressText(cData.origOrigin||'')  : (cData.origOrigin||'');
+
+        // 把內文裡的 [IMG:ref:id] 參照標記換回真正的圖片資料。各自獨立抓取、
+        // 各自 try/catch——單張圖片抓不到（例如那時候上傳失敗過）只會讓那個
+        // 標記被拿掉，不會讓整個章節還原失敗。
+        const refIds = [...finalContent.matchAll(/\[IMG:ref:([^\]]+)\]/g)].map(m=>m[1]);
+        if(refIds.length){
+          const imageMap = {};
+          await pMap([...new Set(refIds)], async (imgId)=>{
+            try{
+              const imgDoc = await fsRestGet(`${path}/images/${imgId}`);
+              if(imgDoc) imageMap[imgId] = fromFsDoc(imgDoc).data || null;
+            }catch(err){
+              console.error('內嵌圖片下載失敗，該張圖片將不會顯示：', err);
+            }
+          }, 3);
+          finalContent = reinsertInlineImages(finalContent, imageMap);
+        }
+
         chaptersByNovel[ni][ci] = {
           id:          cData.id || genId('ch'),
           title:       cData.title  || '',
@@ -4316,7 +4432,7 @@ async function _doRestore(){
         name:      nData.name      || '',
         author:    nData.author    || '',
         color:     nData.color     || COVER_COLORS[0],
-        coverImg:  nData.coverImg  || null,
+        coverImg:  coverImgByNovel[ni] || null,
         converted: nData.converted || false,
         scrollPct: localNovel ? (localNovel.scrollPct||0) : 0,
         bookmarks: nData.bookmarks || [],
@@ -4334,7 +4450,7 @@ async function _doRestore(){
     fbDirty = false;
     saveSyncMeta({novels: Object.fromEntries(novels.map(n=>[
       n.id,
-      {metaHash:novelMetaHash(n), chapters:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]))}
+      {metaHash:novelMetaHash(n), chapters:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])), coverHash:n.coverImg?hashStr(n.coverImg):null}
     ]))});
     bar.style.width = '90%';
     msg.textContent = '套用設定...';
