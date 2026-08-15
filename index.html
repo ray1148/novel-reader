@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="google" content="notranslate">
-<link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjogIuWwj+iqqumWseiugOWKqeaJiyIsICJzaG9ydF9uYW1lIjogIuWwj+iqqumWseiugOWKqeaJiyIsICJzdGFydF91cmwiOiAiLiIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjMWExODE0IiwgInRoZW1lX2NvbG9yIjogIiMxYTE4MTQiLCAiaWNvbnMiOiBbeyJzcmMiOiAiZGF0YTppbWFnZS9zdmcreG1sLCUzQ3N2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMDAgMTAwJyUzRSUzQ3JlY3Qgd2lkdGg9JzEwMCcgaGVpZ2h0PScxMDAnIHJ4PScxOCcgZmlsbD0nJTIzMWExODE0Jy8lM0UlM0N0ZXh0IHg9JzUwJyB5PSc2OCcgZm9udC1zaXplPSc1OCcgdGV4dC1hbmNob3I9J21pZGRsZScgZmlsbD0nJTIzZThlMmQ5JyUzRSVGMCU5RiU5MyU5NiUzQy90ZXh0JTNFJTNDL3N2ZyUzRSIsICJzaXplcyI6ICJhbnkiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55IG1hc2thYmxlIn1dfQ==">
+<link rel="manifest" href="manifest.json">
 <!-- 加到主畫面後以全螢幕獨立視窗開啟，不顯示網址列 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -4333,9 +4333,17 @@ async function _doRestore(){
       if(useIdFormat && Array.isArray(nData.chapterOrder)){
         nData.chapterOrder.forEach((cid,ci)=>{
           const remoteHash = nData.chapterHashes ? nData.chapterHashes[cid] : null;
-          const localChap = localNovel ? localNovel.chapters.find(c=>c.id===cid) : null;
+          let localChap = localNovel ? localNovel.chapters.find(c=>c.id===cid) : null;
+          if(!localChap && localNovel && remoteHash){
+            // id 對不上，但可能只是「這台裝置自己獨立產生了不同的 id」
+            // （例如兩台裝置各自從舊資料遷移出 id，從來沒真正同步過一次）。
+            // 退而求其次，用內容雜湊值找找本機有沒有內容其實一樣的章節，
+            // 有的話直接沿用、不用重新下載，並且改採用雲端這個 id，讓兩邊
+            // 之後慢慢收斂成一致，不會每次還原都卡在同一批「假性變動」。
+            localChap = localNovel.chapters.find(c=>chapterHash(c)===remoteHash);
+          }
           if(localChap && remoteHash && chapterHash(localChap)===remoteHash){
-            chaptersByNovel[ni][ci] = localChap; // 內容沒變，直接沿用，不用下載
+            chaptersByNovel[ni][ci] = {...localChap, id:cid}; // 內容沒變，直接沿用，不用下載
             reusedCount++;
           } else {
             chapterJobs.push({ni, ci, chapId:cid});
@@ -4420,7 +4428,13 @@ async function _doRestore(){
       if(localNovel && localNovel.lastChapter!=null){
         const localLastChap = localNovel.chapters[localNovel.lastChapter];
         if(localLastChap){
-          const idx=chapters.findIndex(c=>c.id===localLastChap.id);
+          // id 有可能因為上面的內容比對 fallback 被換成雲端的 id 了，
+          // 所以除了直接用 id 找，也要退一步用內容本身找回同一篇章節。
+          let idx=chapters.findIndex(c=>c.id===localLastChap.id);
+          if(idx<0){
+            const lastHash=chapterHash(localLastChap);
+            idx=chapters.findIndex(c=>chapterHash(c)===lastHash);
+          }
           if(idx>=0){
             lastChapter=idx;
             chapters[idx]={...chapters[idx], scrollPct:localLastChap.scrollPct||0};
