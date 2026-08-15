@@ -4020,7 +4020,13 @@ function novelMetaHash(n, chapterHashMap){
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
-  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||'')+'\u0001'+JSON.stringify(c.highlights||[])+'\u0001'+extraFlag);
+  // 這個標記本身不代表任何實際資料，純粹是「這章有沒有內嵌圖片」的旗標。
+  // 加這個的原因：內嵌圖片改成拆開獨立上傳之前插入的圖片，內容本身完全
+  // 沒變過，雜湊值判斷「沒變動」就永遠不會觸發新的上傳邏輯，圖片會一直
+  // 卡在舊的（可能失敗過的）狀態。加上這個標記後，含圖片的章節雜湊值會
+  // 跟舊資料不一樣，逼它們下次同步時強制重傳一次，才會真的走新流程。
+  const hasInlineImg = /\[IMG:data:/.test(c.content||'') ? 'img1' : '';
+  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||'')+'\u0001'+JSON.stringify(c.highlights||[])+'\u0001'+extraFlag+'\u0001'+hasInlineImg);
 }
 
 // auto=true 時為背景自動同步：不顯示遮罩、不彈確認，只有真的有變更才會顯示提示
