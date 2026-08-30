@@ -3106,8 +3106,18 @@ function confirmDeleteNovel(){
   // Clear RAG index for deleted novel
   const delKey = novelKey(editingNovelIdx);
   delete ragIndex[delKey];
+  // 明確記錄「這本是使用者主動刪除的」，下次同步時雲端才會跟著真的刪除。
+  // 這是唯一會觸發雲端刪除小說的地方——不會再用「本機陣列裡找不到」去推測。
+  if(n.id) markNovelDeletedForSync(n.id);
   novels.splice(editingNovelIdx,1);
   persist();closeModal("editNovelModal");renderShelf();showToast("已刪除");
+}
+function markNovelDeletedForSync(novelId){
+  try{
+    const list = JSON.parse(localStorage.getItem('nr3_deleted_novels')||'[]');
+    if(!list.includes(novelId)) list.push(novelId);
+    localStorage.setItem('nr3_deleted_novels', JSON.stringify(list));
+  }catch(e){ console.error('記錄刪除清單失敗', e); }
 }
 function initEditSwatches(){
   const wrap=document.getElementById("editColorSwatches");if(!wrap)return;wrap.innerHTML="";
@@ -3474,8 +3484,12 @@ function deleteChapter(){
   showConfirm('確定刪除章節「'+(novels[activeNovel].chapters[editingChapterIdx]?.title||'此章節')+'」？', ()=>{
     const n=novels[activeNovel];
     const delIdx=editingChapterIdx;
+    const delId=n.chapters[delIdx]?.id;
     n.chapters.splice(delIdx,1);
     invalidateChapterOrder(n);
+
+    // 明確記錄「這章是使用者主動刪除的」，下次同步時雲端才會跟著真的刪除。
+    if(n.id && delId) markChapterDeletedForSync(n.id, delId);
 
     // 刪掉一章之後，後面所有章節的陣列位置都會往前移一格。
     // 把「上次讀到哪」跟「目前正在看哪一章」的指標一起換算過去，
@@ -3497,6 +3511,14 @@ function deleteChapter(){
     if(dv3&&dv3.classList.contains("active")) renderDetailChapList();
     renderShelf();
   });
+}
+function markChapterDeletedForSync(novelId, chapId){
+  try{
+    const list = JSON.parse(localStorage.getItem('nr3_deleted_chapters')||'[]');
+    const key = novelId+'::'+chapId;
+    if(!list.includes(key)) list.push(key);
+    localStorage.setItem('nr3_deleted_chapters', JSON.stringify(list));
+  }catch(e){ console.error('記錄章節刪除清單失敗', e); }
 }
 
 // ══ Settings ══
@@ -3982,6 +4004,18 @@ function hashStr(str){
   for(let i=0;i<str.length;i++){ h=((h<<5)+h+str.charCodeAt(i))|0; }
   return (h>>>0).toString(36);
 }
+// 跟 JSON.stringify 不同：物件的 key 一律排序後再序列化，不受「目前物件
+// 裡 key 的插入順序」影響。這點很重要——Firestore 不保證回傳的欄位順序，
+// 章節從雲端還原下來之後，highlights/bookmarks 之類的巢狀物件即使內容
+// 完全沒變，key 的順序也可能跟原本在本機建立時不一樣。如果拿一般
+// JSON.stringify 去算雜湊，同樣的資料會因為 key 順序不同而算出不一樣的
+// 雜湊值，讓還原誤判「這章有變動」，導致每次還原都重新下載一堆其實
+// 根本沒改過的章節。
+function stableStringify(v){
+  if(v===null || typeof v!=='object') return JSON.stringify(v);
+  if(Array.isArray(v)) return '['+v.map(stableStringify).join(',')+']';
+  return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',')+'}';
+}
 // Stable, never-reused id — used as the Firestore document id for novels/chapters
 // so that cloud sync tracks *identity* instead of array position. This means
 // deleting/inserting a chapter in the middle of the list no longer looks like
@@ -4016,7 +4050,7 @@ function saveSyncMeta(m){
 function novelMetaHash(n, chapterHashMap){
   const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
   const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
-  return hashStr(JSON.stringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
+  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -4026,7 +4060,7 @@ function chapterHash(c){
   // 卡在舊的（可能失敗過的）狀態。加上這個標記後，含圖片的章節雜湊值會
   // 跟舊資料不一樣，逼它們下次同步時強制重傳一次，才會真的走新流程。
   const hasInlineImg = /\[IMG:data:/.test(c.content||'') ? 'img1' : '';
-  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||'')+'\u0001'+JSON.stringify(c.highlights||[])+'\u0001'+extraFlag+'\u0001'+hasInlineImg);
+  return hashStr((c.title||'')+'\u0001'+(c.content||'')+'\u0001'+(c.origin||'')+'\u0001'+(c.origContent||'')+'\u0001'+(c.origOrigin||'')+'\u0001'+stableStringify(c.highlights||[])+'\u0001'+extraFlag+'\u0001'+hasInlineImg);
 }
 
 // auto=true 時為背景自動同步：不顯示遮罩、不彈確認，只有真的有變更才會顯示提示
@@ -4066,24 +4100,34 @@ async function fbBackup(auto){
       if(delta>0){ mergedReadTime[day]=(mergedReadTime[day]||0)+delta; readTimeChanged=true; }
     }
 
-    // 1. 比對出真正有變動的項目（新增/修改/刪除），而不是整本刪除重傳
+    // 1. 比對出真正有變動的項目（新增/修改），不是整本刪除重傳
     //    用「id」而非陣列位置追蹤身份，這樣在小說/章節中間插入或刪除
     //    也不會讓後面所有項目被誤判成「內容變了」而整批重傳。
     ensureIds();
     const oldNovelsMap = syncMeta.novels || {};
-    const curNovelIds = new Set(novels.map(n=>n.id));
     const tasks = [];
     const newNovelMeta = {};
 
-    // 已從本地移除的小說（雲端曾同步過、但現在本地找不到對應 id 了）
-    for(const oldId of Object.keys(oldNovelsMap)){
-      if(!curNovelIds.has(oldId)) tasks.push({type:'deleteNovel', id:oldId});
-    }
+    // 雲端刪除小說「只」處理使用者明確按過『刪除書籍』、記錄在這份清單裡的
+    // id——絕對不會用「本機陣列裡剛好找不到這個 id」去推測使用者要刪除。
+    // 之前那樣做出過真正的資料遺失事故：只要任何原因（bug、還原時機問題）
+    // 讓某本小說暫時沒被正確載入回本機陣列，下一次備份就會把它當成使用者
+    // 主動刪除、直接去雲端砍掉，即使使用者根本沒有刪除的意思。
+    let deletedNovelIds = [];
+    try{ deletedNovelIds = JSON.parse(localStorage.getItem('nr3_deleted_novels')||'[]'); }catch(e){}
+    const stillPendingDelete = [];
+    deletedNovelIds.forEach(delId=>{
+      tasks.push({type:'deleteNovel', id:delId});
+      stillPendingDelete.push(delId); // 上傳成功後才會從清單移除，失敗會保留、下次重試
+    });
+
+    let deletedChapterKeys = [];
+    try{ deletedChapterKeys = JSON.parse(localStorage.getItem('nr3_deleted_chapters')||'[]'); }catch(e){}
+    const stillPendingChapterDelete = [];
 
     novels.forEach(n=>{
       const old = oldNovelsMap[n.id] || {metaHash:null, chapters:{}};
       const oldChapters = old.chapters || {};
-      const curChapIds = new Set(n.chapters.map(c=>c.id));
       const newChapters = {};
       let chaptersChanged = false;
       n.chapters.forEach(c=>{
@@ -4094,12 +4138,14 @@ async function fbBackup(auto){
           chaptersChanged = true; // novelMeta 裡的 chapterHashes 對照表也要跟著更新
         }
       });
-      for(const oldCid of Object.keys(oldChapters)){
-        if(!curChapIds.has(oldCid)){
-          tasks.push({type:'deleteChapter', novelId:n.id, chapId:oldCid});
-          chaptersChanged = true;
-        }
-      }
+      // 章節刪除同樣只處理使用者明確按過『刪除章節』、記錄在 tombstone
+      // 清單裡的項目，不會再用「本機陣列裡找不到這個 id」去推測。
+      deletedChapterKeys.filter(k=>k.startsWith(n.id+'::')).forEach(key=>{
+        const chapId = key.slice(n.id.length+2);
+        tasks.push({type:'deleteChapter', novelId:n.id, chapId});
+        stillPendingChapterDelete.push(key);
+        chaptersChanged = true;
+      });
 
       const mHash = novelMetaHash(n, newChapters);
       const needsMetaUpload = (mHash !== old.metaHash) || chaptersChanged;
@@ -4113,6 +4159,15 @@ async function fbBackup(auto){
       if(coverHash !== (old.coverHash||null)) tasks.push({type:'coverImg', id:n.id});
 
       newNovelMeta[n.id] = {metaHash:mHash, chapters:newChapters, coverHash};
+    });
+    // 屬於已刪除小說（不在本機 novels 裡）的章節刪除紀錄也要保留繼續重試，
+    // 不能因為上面的迴圈只跑「目前還存在的小說」就漏掉它們
+    const curNovelIdsForChapDel = new Set(novels.map(n=>n.id));
+    deletedChapterKeys.forEach(key=>{
+      const nId = key.split('::')[0];
+      if(!curNovelIdsForChapDel.has(nId) && !stillPendingChapterDelete.includes(key)){
+        stillPendingChapterDelete.push(key);
+      }
     });
 
     if(tasks.length===0 && !readTimeChanged){
@@ -4139,6 +4194,9 @@ async function fbBackup(auto){
         await deleteCol(`users/${uid}/novels/n_${t.id}/chapters`);
         await fsRestDelete(`users/${uid}/novels/n_${t.id}/cover/img`).catch(()=>{}); // 可能本來就沒有封面，忽略失敗
         await fsRestDelete(`users/${uid}/novels/n_${t.id}`);
+        // 這本確定刪除成功了，才從待刪除清單移除；沒成功的話保留，下次同步繼續重試
+        const idx = stillPendingDelete.indexOf(t.id);
+        if(idx>=0) stillPendingDelete.splice(idx,1);
       } else if(t.type==='novelMeta'){
         const n=novels.find(x=>x.id===t.id);
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
@@ -4188,6 +4246,9 @@ async function fbBackup(auto){
       } else if(t.type==='deleteChapter'){
         await deleteCol(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images`).catch(()=>{});
         await fsRestDelete(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`);
+        const key = t.novelId+'::'+t.chapId;
+        const kidx = stillPendingChapterDelete.indexOf(key);
+        if(kidx>=0) stillPendingChapterDelete.splice(kidx,1);
       }
       done++;
       if(!auto){
@@ -4215,6 +4276,8 @@ async function fbBackup(auto){
     renderReadingStats();
 
     saveSyncMeta({novels:newNovelMeta});
+    localStorage.setItem('nr3_deleted_novels', JSON.stringify(stillPendingDelete));
+    localStorage.setItem('nr3_deleted_chapters', JSON.stringify(stillPendingChapterDelete));
 
     const ts = new Date().toLocaleString('zh-TW');
     const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : '更新閱讀時間';
