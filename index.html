@@ -707,7 +707,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         </div>
         <div style="display:none;align-items:center;gap:8px;margin-top:6px" id="autoSyncRow">
           <label class="sw" style="transform:scale(.8);flex-shrink:0"><input type="checkbox" id="autoSyncToggle" onchange="toggleAutoSync(this.checked)"><span class="sl"></span></label>
-          <span style="font-size:12px;color:var(--ink-3)">自動同步（背景每隔幾分鐘偵測變更並只上傳差異）</span>
+          <span style="font-size:12px;color:var(--ink-3)">自動同步（背景每隔幾分鐘自動把本機變更上傳到雲端；預設關閉，需要手動按「▲ 同步到雲端」）</span>
         </div>
       </div>
       <div style="font-size:12px;color:var(--ink-3)" id="fbStatus"></div>
@@ -3949,7 +3949,7 @@ function setFbLoggedIn(yes){
     asRow.style.display = yes?'flex':'none';
     if(yes){
       const asToggle = document.getElementById('autoSyncToggle');
-      if(asToggle) asToggle.checked = localStorage.getItem('nr3_autosync') !== 'off';
+      if(asToggle) asToggle.checked = localStorage.getItem('nr3_autosync') === 'on';
     }
   }
 }
@@ -4199,11 +4199,42 @@ async function fbBackup(auto){
         if(idx>=0) stillPendingDelete.splice(idx,1);
       } else if(t.type==='novelMeta'){
         const n=novels.find(x=>x.id===t.id);
+        const localChapterOrder  = n.chapters.map(c=>c.id);
+        const localChapterHashes = Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
+        // 合併雲端既有的章節清單，不要整包覆蓋。這台裝置如果比較久沒同步、
+        // 章節比雲端少，直接把 chapterOrder 蓋成本機這份短清單的話，別的
+        // 裝置後來新增、但這台還沒抓回來的章節就會從清單裡消失——章節本體
+        // 雖然還留在 Firestore，但沒有清單指到它，之後永遠不會再被還原
+        // 回來，等於憑空遺失。只有使用者在「這台裝置」明確刪除過的章節
+        // （tombstone 清單裡有記錄）才允許真的從清單移除。
+        let mergedChapterOrder  = localChapterOrder;
+        let mergedChapterHashes = localChapterHashes;
+        try{
+          const remoteNovelDoc = await fsRestGet(`users/${uid}/novels/n_${t.id}`);
+          const remoteNovel = remoteNovelDoc ? fromFsDoc(remoteNovelDoc) : null;
+          if(remoteNovel && Array.isArray(remoteNovel.chapterOrder)){
+            const localIdSet  = new Set(localChapterOrder);
+            const tombstoned  = new Set(deletedChapterKeys.filter(k=>k.startsWith(t.id+'::')).map(k=>k.slice(t.id.length+2)));
+            const extraIds    = remoteNovel.chapterOrder.filter(cid=>!localIdSet.has(cid) && !tombstoned.has(cid));
+            if(extraIds.length){
+              mergedChapterOrder  = [...localChapterOrder, ...extraIds];
+              mergedChapterHashes = {...localChapterHashes};
+              extraIds.forEach(cid=>{
+                if(remoteNovel.chapterHashes && remoteNovel.chapterHashes[cid]) mergedChapterHashes[cid] = remoteNovel.chapterHashes[cid];
+              });
+            }
+          }
+        }catch(err){
+          // 讀不到雲端目前的清單（例如剛好離線），退回只用本機清單上傳。
+          // 這種情況下沒辦法保證不會覆蓋掉其他裝置的新章節，但至少不會
+          // 讓整個同步流程失敗中斷。
+          console.error('讀取雲端章節清單失敗，改用本機清單上傳：', err);
+        }
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
           id:n.id, name:n.name||'', author:n.author||'', color:n.color||'',
           converted:n.converted||false, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
-          chapterCount:n.chapters.length, tags:n.tags||[], chapterOrder:n.chapters.map(c=>c.id), extraManualOrder:!!n.extraManualOrder,
-          chapterHashes:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])),
+          chapterCount:mergedChapterOrder.length, tags:n.tags||[], chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
+          chapterHashes:mergedChapterHashes,
           coverHash: n.coverImg ? hashStr(n.coverImg) : null,
         });
       } else if(t.type==='coverImg'){
@@ -4576,11 +4607,14 @@ async function _doRestore(){
 }
 
 // ── 背景自動同步：每 3 分鐘檢查一次，只有真的有本地變更(fbDirty)才會觸發，
-//    且 fbBackup 內部只會上傳/刪除真正變動的章節，不會整包重傳 ──
+//    且 fbBackup 內部只會上傳/刪除真正變動的章節，不會整包重傳。
+//    預設關閉：多裝置情境下，資料比較舊/少的裝置若自動上傳，可能在使用者
+//    來得及手動「還原」拉取最新資料之前，就把自己過時的內容推上雲端。
+//    使用者要自動同步的話，要自己在設定裡明確打開這個開關。──
 const FB_AUTOSYNC_INTERVAL_MS = 3*60*1000;
 setInterval(()=>{
   if(!fbUser || !fsProjectId) return;
-  if(localStorage.getItem('nr3_autosync')==='off') return;
+  if(localStorage.getItem('nr3_autosync')!=='on') return;
   if(!fbDirty) return;
   fbBackup(true).then(()=>{ fbDirty=false; }).catch(e=>{
     console.warn('auto sync failed, will retry next tick', e);
@@ -4589,7 +4623,7 @@ setInterval(()=>{
 }, FB_AUTOSYNC_INTERVAL_MS);
 // 分頁被隱藏（切走/鎖屏）前也嘗試同步一次，避免變更留在本機太久沒上傳
 document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState==='hidden' && fbUser && fsProjectId && fbDirty && localStorage.getItem('nr3_autosync')!=='off'){
+  if(document.visibilityState==='hidden' && fbUser && fsProjectId && fbDirty && localStorage.getItem('nr3_autosync')==='on'){
     fbBackup(true).then(()=>{ fbDirty=false; }).catch(e=>{
       console.warn('auto sync failed, will retry next tick', e);
     });
