@@ -4170,7 +4170,21 @@ async function fbBackup(auto){
       }
     });
 
-    if(tasks.length===0 && !readTimeChanged){
+    // 檢查雲端目前的小說清單（users/{uid} 的 novelIds）有沒有漏掉本機明明
+    // 還有、但沒被使用者刪除過的小說。之前的版本每次同步都會把 novelIds
+    // 整包蓋成「這台裝置目前的清單」——如果另一台資料比較少、比較舊的
+    // 裝置剛好搶先同步了一次，就會把這台裝置其實還在的小說直接從雲端
+    // 清單裡擠掉（本體文件不一定真的被刪，但清單裡再也找不到它，等於
+    // 之後永遠不會再被還原回來）。這裡先偵測有沒有這種「本機有、雲端
+    // 清單卻沒列出」的落差，有的話就算沒有其他變更，也要强制執行一次
+    // 修復性的寫入，把清單補回來。
+    const localNovelIds     = novels.map(n=>n.id);
+    const remoteNovelIds    = Array.isArray(remoteMeta.novelIds) ? remoteMeta.novelIds : [];
+    const pendingDeleteSet  = new Set(stillPendingDelete);
+    const missingFromRemote = localNovelIds.filter(id=>!remoteNovelIds.includes(id));
+    const novelIdsNeedRepair = missingFromRemote.length>0;
+
+    if(tasks.length===0 && !readTimeChanged && !novelIdsNeedRepair){
       // 就算完全沒東西要「推」上去，雲端的閱讀時間仍可能因為其他裝置而更新過，順手拉回本地
       if(JSON.stringify(mergedReadTime)!==JSON.stringify(localReadTimeRaw)){
         saveReadTimeData(mergedReadTime);
@@ -4289,14 +4303,19 @@ async function fbBackup(auto){
     }, 6);
 
     // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間，
-    //    以及目前小說的 id 順序（還原時要靠這個知道抓哪些文件、依什麼順序組回去）
+    //    以及目前小說的 id 順序（還原時要靠這個知道抓哪些文件、依什麼順序組回去）。
+    //    novelIds 用「合併」而非整包覆蓋：保留本機目前的清單，再補回雲端
+    //    有列出、但本機這邊看不到、而且沒有正在等待刪除的 id——避免資料
+    //    比較少/舊的裝置同步時，把別的裝置還在用的小說擠出清單。
+    const extraRemoteNovelIds = remoteNovelIds.filter(id=>!localNovelIds.includes(id) && !pendingDeleteSet.has(id));
+    const mergedNovelIds = [...localNovelIds, ...extraRemoteNovelIds];
     await fsRestSet(`users/${uid}`, {
       version: 5,
       timestamp: new Date().toISOString(),
       settings: {...settings},
       userDict: localStorage.getItem('nr3_dict')||'',
-      novelCount: novels.length,
-      novelIds: novels.map(n=>n.id),
+      novelCount: mergedNovelIds.length,
+      novelIds: mergedNovelIds,
       readTime: mergedReadTime,
       updatedAt: new Date().toISOString()
     });
@@ -4311,7 +4330,7 @@ async function fbBackup(auto){
     localStorage.setItem('nr3_deleted_chapters', JSON.stringify(stillPendingChapterDelete));
 
     const ts = new Date().toLocaleString('zh-TW');
-    const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : '更新閱讀時間';
+    const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : (novelIdsNeedRepair ? `修復 ${missingFromRemote.length} 本小說的雲端清單` : '更新閱讀時間');
     if(!auto){
       bar.style.width = '100%';
       msg.textContent = '同步完成！' + ts;
