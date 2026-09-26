@@ -476,7 +476,9 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <div id="novelTitleBar">小說名稱</div>
       <div class="novel-subtitle" id="novelSubtitle"></div>
     </div>
-    <button class="btn-ghost btn-sm" onclick="openEditModal(activeNovel,activeChapter)" id="btnEditChap">✏ 編輯</button>
+    <div id="chapEditControls" style="display:flex;gap:6px">
+      <button class="btn-ghost btn-sm" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>
+    </div>
   </div>
 
   <div class="novel-body">
@@ -1384,12 +1386,14 @@ function goShelf(){
   document.getElementById("readerWrap").classList.remove("panel-open");
 }
 function goNovelBack(){
-  hideReadingUI();
-  panelOpen=false;
-  document.getElementById("aiPanel").classList.remove("open");
-  document.getElementById("readerWrap").classList.remove("panel-open");
-  if(activeNovel>=0) showDetail(activeNovel);
-  else goShelf();
+  confirmLeaveInlineEdit(()=>{
+    hideReadingUI();
+    panelOpen=false;
+    document.getElementById("aiPanel").classList.remove("open");
+    document.getElementById("readerWrap").classList.remove("panel-open");
+    if(activeNovel>=0) showDetail(activeNovel);
+    else goShelf();
+  });
 }
 function goSettings(){showView("viewSettings");updateStorageInfo();renderReadingStats();}
 function goUserSettings(){showView("viewUserSettings");}
@@ -2042,7 +2046,7 @@ function renderToc(){
     const titleEl=document.createElement("span");titleEl.style.flex="1";titleEl.textContent=c.title||("第"+(realIdx+1)+"章");
     el.appendChild(numEl);el.appendChild(titleEl);
     el.dataset.realIdx = realIdx;
-    el.addEventListener("click",()=>{loadChapter(realIdx);closeToc();});
+    el.addEventListener("click",()=>{confirmLeaveInlineEdit(()=>{loadChapter(realIdx);closeToc();});});
     list.appendChild(el);
   });
   if(!shown.length){
@@ -2073,6 +2077,7 @@ function renderToc(){
 }
 
 function loadChapter(idx){
+  if(inlineEditing) exitInlineEditUI(); // 安全防呆：理論上不會在編輯中被呼叫到（有 confirmLeaveInlineEdit 擋著），萬一漏擋也不會卡住畫面
   activeChapter=idx;
   chapterLoadTime=Date.now();
   const n=novels[activeNovel],c=n.chapters[idx];
@@ -2106,6 +2111,127 @@ function loadChapter(idx){
   saveTimer=setTimeout(()=>persist(), 400);
   // Briefly show UI when chapter changes
   showUIBriefly();
+}
+
+// ══ 閱讀頁面就地編輯：不跳出另一個視窗，直接在目前看到的位置把內文
+// 換成一個可以打字的欄位，改完存檔後原地換回一般顯示。══
+let inlineEditing = false;
+let inlineEditOrigContent = null;
+
+function enterInlineEdit(){
+  if(activeNovel<0||activeChapter<0) return;
+  const n=novels[activeNovel], c=n?.chapters[activeChapter];
+  if(!n||!c) return;
+  const pane=document.getElementById("paneContent");
+  const scrollBox=document.getElementById("paneLeft");
+  const beforeTop=scrollBox.scrollTop;
+
+  inlineEditing=true;
+  inlineEditOrigContent=c.content||"";
+
+  pane.innerHTML="";
+  const ta=document.createElement("textarea");
+  ta.id="inlineEditArea";
+  ta.value=inlineEditOrigContent;
+  ta.spellcheck=false;
+  // 樣式盡量跟閱讀文字一致（字體/字級/行高都直接繼承 .pane-content），
+  // 這樣切進編輯模式的當下畫面幾乎不會跳動，看起來就是「原地變成可以打字」
+  ta.style.cssText="width:100%;display:block;border:none;outline:none;resize:none;background:transparent;font:inherit;line-height:inherit;color:inherit;white-space:pre-wrap;word-break:break-word;overflow:hidden;padding:0;margin:0;-webkit-tap-highlight-color:transparent";
+  const autoGrow=()=>{ ta.style.height="auto"; ta.style.height=ta.scrollHeight+"px"; };
+  ta.addEventListener("input", autoGrow);
+  pane.appendChild(ta);
+  autoGrow();
+  // 換成 textarea 之後整體高度會略為變動（textarea 的預設行為跟純顯示不完全
+  // 一樣），這裡用「原本捲動的像素位置」直接還原，肉眼感覺就是留在原地
+  scrollBox.scrollTop=beforeTop;
+  ta.focus();
+
+  renderInlineEditToolbar();
+  // 編輯的時候把上方工具列固定顯示，不要照平常閱讀模式那樣幾秒後自動收合
+  // ——不然打字打到一半按鈕就飛走了，還要點一下畫面才能叫回來按「儲存」
+  showReadingUI();
+  clearTimeout(uiTimer);
+}
+
+function renderInlineEditToolbar(){
+  const box=document.getElementById("chapEditControls");
+  if(!box) return;
+  box.innerHTML=
+    '<button class="btn-ghost btn-sm" onclick="cancelInlineEdit()">取消</button>'+
+    '<button class="btn-ghost btn-sm" onclick="openMoreChapterSettings()" title="標題／分類／原文對照／插入圖片、顏色標記等進階設定">⚙ 更多</button>'+
+    '<button class="btn-primary btn-sm" onclick="saveInlineEdit()">✓ 儲存</button>';
+}
+
+// 只還原按鈕列跟旗標，不動內文顯示（呼叫端自己決定要不要重畫內文）
+function exitInlineEditUI(){
+  inlineEditing=false;
+  const box=document.getElementById("chapEditControls");
+  if(box){
+    const n=novels[activeNovel];
+    const hasChap=n&&n.chapters&&n.chapters.length;
+    box.innerHTML=hasChap?'<button class="btn-ghost btn-sm" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>':'';
+  }
+  showUIBriefly(); // 編輯結束，恢復平常閱讀模式「幾秒後自動收合工具列」的行為
+}
+
+function cancelInlineEdit(){
+  if(!inlineEditing) return;
+  const pane=document.getElementById("paneContent");
+  const scrollBox=document.getElementById("paneLeft");
+  const beforeTop=scrollBox.scrollTop;
+  renderContent(pane, inlineEditOrigContent);
+  scrollBox.scrollTop=beforeTop;
+  exitInlineEditUI();
+}
+
+function saveInlineEdit(){
+  if(!inlineEditing||activeNovel<0||activeChapter<0) return;
+  const n=novels[activeNovel], c=n?.chapters[activeChapter];
+  if(!n||!c) return;
+  const ta=document.getElementById("inlineEditArea");
+  const newContent=ta?ta.value:inlineEditOrigContent;
+  const pane=document.getElementById("paneContent");
+  const scrollBox=document.getElementById("paneLeft");
+  const beforeTop=scrollBox.scrollTop;
+
+  c.content=newContent;
+  invalidateChapterOrder(n);
+  persist();
+  renderContent(pane, newContent);
+  scrollBox.scrollTop=beforeTop;
+  exitInlineEditUI();
+  showToast("✅ 已儲存");
+
+  const dv=document.getElementById("viewDetail");
+  if(dv&&dv.classList.contains("active")) renderDetailChapList();
+  renderShelf();
+}
+
+// 「更多」：標題／分類／原文對照／插圖／顏色標記這些欄位，行內編輯欄
+// 沒有位置放，直接沿用原本那個完整的編輯視窗處理。切換過去之前，先把
+// 行內編輯欄裡「還沒存檔」的內容一起帶過去，這樣不會因為切換視窗就
+// 悄悄漏掉剛剛打的字。
+function openMoreChapterSettings(){
+  const ta=document.getElementById("inlineEditArea");
+  const draftContent=ta?ta.value:null;
+  const pane=document.getElementById("paneContent");
+  const scrollBox=document.getElementById("paneLeft");
+  const beforeTop=scrollBox.scrollTop;
+  renderContent(pane, inlineEditOrigContent);
+  scrollBox.scrollTop=beforeTop;
+  exitInlineEditUI();
+  openChapterModal(activeNovel, activeChapter);
+  if(draftContent!=null) document.getElementById("chapContent").value=draftContent;
+}
+
+// 導覽（返回書籍頁／上一章／下一章／目錄跳章）如果正在行內編輯中，
+// 先跟使用者確認要不要放棄還沒存檔的修改，避免切走就悄悄不見了
+function confirmLeaveInlineEdit(action){
+  if(!inlineEditing){ action(); return; }
+  showConfirm("目前的編輯內容還沒儲存，確定要放棄嗎？", ()=>{
+    cancelInlineEdit();
+    action();
+  });
 }
 
 function toggleToc(){
@@ -2213,11 +2339,11 @@ function updateBottomBar(){
   if(nextTitle) nextTitle.textContent = nextIdx>=0?(n.chapters[nextIdx].title||"下一章"):"─";
   if(prevBtn){
     prevBtn.classList.toggle("disabled", prevIdx<0);
-    prevBtn.onclick = prevIdx>=0?()=>{ loadChapter(prevIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }:null;
+    prevBtn.onclick = prevIdx>=0?()=>{ confirmLeaveInlineEdit(()=>{ loadChapter(prevIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }); }:null;
   }
   if(nextBtn){
     nextBtn.classList.toggle("disabled", nextIdx<0);
-    nextBtn.onclick = nextIdx>=0?()=>{ loadChapter(nextIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }:null;
+    nextBtn.onclick = nextIdx>=0?()=>{ confirmLeaveInlineEdit(()=>{ loadChapter(nextIdx); document.getElementById("paneLeft").scrollTop=0; showUIBriefly(); }); }:null;
   }
 }
 
@@ -2268,6 +2394,8 @@ document.getElementById("paneLeft").addEventListener("click", function(e){
     closeToc();
     return;
   }
+  // 行內編輯中：點內文是要把游標移到那個位置打字，不是要收合/展開工具列
+  if(inlineEditing) return;
   // Don't trigger on buttons/links inside content
   if(e.target.tagName==="BUTTON"||e.target.tagName==="A"||e.target.closest("button")) return;
   toggleReadingUI();
@@ -2279,6 +2407,9 @@ let autoAdvanceLock = false;
 // setHeadersHidden removed (replaced by tap-to-show UI)
 document.getElementById("paneLeft").addEventListener("scroll",function(){
   if(activeNovel<0)return;
+  // 行內編輯中：這個 textarea 的捲動只是打字位置，不是閱讀進度，不要拿來
+  // 更新進度／同步捲軸／甚至誤觸「捲到底自動跳下一章」把編輯中的內容弄丟
+  if(inlineEditing) return;
   const prevScrollY = lastScrollY;
   const pct=this.scrollHeight>this.clientHeight?this.scrollTop/(this.scrollHeight-this.clientHeight):0;
   const c=novels[activeNovel]?.chapters[activeChapter];
