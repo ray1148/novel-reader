@@ -251,6 +251,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .detail-chap-item{display:flex;align-items:center;padding:13px 16px;border-bottom:1px solid var(--paper-3);cursor:pointer;gap:12px;transition:background .12s}
 .detail-chap-item:hover{background:var(--paper-2)}
 .detail-chap-item.active-chap{border-left:3px solid var(--gold);padding-left:13px;background:var(--gold-bg)}
+.detail-chap-item.bulk-selected{background:var(--gold-bg)}
+.detail-chap-check{width:17px;height:17px;flex-shrink:0;accent-color:var(--gold);cursor:pointer}
 .detail-chap-num{font-size:11px;color:var(--ink-3);min-width:28px}
 .detail-chap-title{font-size:14px;color:var(--ink);flex:1}
 .detail-chap-actions{display:flex;gap:6px;opacity:0;transition:opacity .15s}
@@ -454,12 +456,19 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <!-- Chapter list -->
     <div class="detail-section-title">
       <span>章節目錄</span>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px" id="detailChapNormalActions">
         <button class="btn-g btn-sm" onclick="openChapterModal(activeNovel)">&#65291; 新增</button>
         <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
           <input type="file" accept=".txt" multiple id="detailBatchFiles" style="display:none">
           &#128196; 批次
         </label>
+        <button class="btn-g btn-sm" onclick="toggleBulkDeleteMode()" title="一次選取多個章節刪除">&#128465; 多選</button>
+      </div>
+      <div style="display:none;gap:8px;align-items:center" id="detailChapBulkActions">
+        <span id="bulkSelCount" style="font-size:12px;color:var(--ink-3);white-space:nowrap">已選 0 個</span>
+        <button class="btn-g btn-sm" onclick="bulkDeleteSelectAllVisible()">全選</button>
+        <button class="btn-g btn-sm" style="color:var(--red);border-color:var(--red)" onclick="confirmBulkDelete()">刪除已選</button>
+        <button class="btn-g btn-sm" onclick="toggleBulkDeleteMode()">取消</button>
       </div>
     </div>
     <div id="detailChapWarning" style="display:none"></div>
@@ -1117,6 +1126,25 @@ async function idbDelete(key){
   }catch(e){ return false; }
 }
 
+// ══ 編輯內文後自動回傳雲端 ══
+// 只在「使用者編輯章節內文並存檔」這個動作後觸發，不會因為捲動進度、
+// 書籤、畫線這類頻繁的小變更就一直打雲端。停筆 2.5 秒沒有再繼續編輯
+// 才真正上傳（debounce），避免連續存檔時重複觸發。若尚未登入雲端同步，
+// 就什麼都不做，等下次登入後手動或自動同步時再一起補上去。
+let editSyncTimer = null;
+function triggerCloudSyncAfterEdit(){
+  if(!fbUser || !fsProjectId) return;
+  clearTimeout(editSyncTimer);
+  editSyncTimer = setTimeout(()=>{
+    fbBackup(true).then(()=>{
+      fbDirty = false;
+      showToast('☁️ 內文修改已同步至雲端');
+    }).catch(e=>{
+      console.warn('編輯後自動同步失敗，等下次自動同步再重試:', e);
+    });
+  }, 2500);
+}
+
 // ══ Persist ══
 function persist(){
   fbDirty=true;
@@ -1587,6 +1615,8 @@ function showDetail(idx){
   activeNovel=idx;
   const n=novels[idx];
   detailChapTab='main';
+  bulkDeleteMode=false;
+  bulkDeleteSelected.clear();
   // Record last opened time for sorting
   n.lastOpenedAt = Date.now();
   persist();
@@ -1638,13 +1668,17 @@ function showDetail(idx){
 // Which tab is showing in the detail page's chapter list: 'main' or 'extra'
 // (番外). Reset to 'main' whenever a different novel's detail page opens.
 let detailChapTab = 'main';
-function setDetailChapTab(tab){ detailChapTab=tab; renderDetailChapList(); }
+function setDetailChapTab(tab){ detailChapTab=tab; bulkDeleteSelected.clear(); renderDetailChapList(); }
 
 function renderDetailChapList(){
   const n=novels[activeNovel];
   const list=document.getElementById("detailChapList");
   const tabsEl=document.getElementById("detailChapTabs");
   const warnEl=document.getElementById("detailChapWarning");
+  const normalActions=document.getElementById("detailChapNormalActions");
+  const bulkActions=document.getElementById("detailChapBulkActions");
+  if(normalActions) normalActions.style.display = bulkDeleteMode ? "none" : "flex";
+  if(bulkActions) bulkActions.style.display = bulkDeleteMode ? "flex" : "none";
   list.innerHTML="";
   if(!n||!n.chapters.length){
     if(tabsEl) tabsEl.innerHTML="";
@@ -1707,7 +1741,17 @@ function renderDetailChapList(){
   shown.forEach((realIdx,pos)=>{
     const c=n.chapters[realIdx];
     const item=document.createElement("div");
-    item.className="detail-chap-item"+(realIdx===resumeChap?" active-chap":"");
+    const isSel = bulkDeleteMode && c.id && bulkDeleteSelected.has(c.id);
+    item.className="detail-chap-item"+(realIdx===resumeChap?" active-chap":"")+(isSel?" bulk-selected":"");
+    if(bulkDeleteMode){
+      const chk=document.createElement("input");
+      chk.type="checkbox";
+      chk.className="detail-chap-check";
+      chk.checked=isSel;
+      chk.addEventListener("click",e=>e.stopPropagation());
+      chk.addEventListener("change",()=>{ if(c.id) toggleBulkDeleteSelect(c.id); });
+      item.appendChild(chk);
+    }
     const numEl=document.createElement("span");
     numEl.className="detail-chap-num";
     numEl.textContent=pos+1;
@@ -1718,7 +1762,7 @@ function renderDetailChapList(){
     if(badge){ badge.style.cssText="font-size:10px;background:var(--gold);color:white;padding:2px 6px;border-radius:10px;"; badge.textContent="上次"; }
     const actions=document.createElement("div");
     actions.className="detail-chap-actions";
-    if(showMoveBtns){
+    if(!bulkDeleteMode && showMoveBtns){
       const upBtn=document.createElement("button");
       upBtn.className="btn-g btn-sm";upBtn.textContent="▲";upBtn.style.padding="3px 7px";
       upBtn.disabled=pos===0;
@@ -1731,15 +1775,95 @@ function renderDetailChapList(){
       downBtn.addEventListener("click",e=>{e.stopPropagation();moveSideStoryDown(realIdx);});
       actions.appendChild(upBtn);actions.appendChild(downBtn);
     }
-    const editBtn=document.createElement("button");
-    editBtn.className="btn-g btn-sm";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
-    editBtn.addEventListener("click",e=>{e.stopPropagation();openEditModal(activeNovel,realIdx);});
-    actions.appendChild(editBtn);
+    if(!bulkDeleteMode){
+      const editBtn=document.createElement("button");
+      editBtn.className="btn-g btn-sm";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
+      editBtn.addEventListener("click",e=>{e.stopPropagation();openEditModal(activeNovel,realIdx);});
+      actions.appendChild(editBtn);
+    }
     item.appendChild(numEl);item.appendChild(titleEl);
     if(badge) item.appendChild(badge);
     item.appendChild(actions);
-    item.addEventListener("click",()=>startReading(realIdx));
+    if(bulkDeleteMode){
+      item.addEventListener("click",()=>{ if(c.id) toggleBulkDeleteSelect(c.id); });
+    } else {
+      item.addEventListener("click",()=>startReading(realIdx));
+    }
     list.appendChild(item);
+  });
+  const cntEl=document.getElementById("bulkSelCount");
+  if(cntEl) cntEl.textContent = `已選 ${bulkDeleteSelected.size} 個`;
+}
+
+// ══ 章節多選刪除 ══
+// 用章節 id（而非陣列位置）記錄選取狀態，這樣切換「正篇／番外」分頁、
+// 或列表因排序重新計算而變動時，已選取的項目不會跑掉或誤選到別章。
+let bulkDeleteMode = false;
+let bulkDeleteSelected = new Set();
+
+function toggleBulkDeleteMode(){
+  bulkDeleteMode = !bulkDeleteMode;
+  bulkDeleteSelected.clear();
+  renderDetailChapList();
+}
+
+function toggleBulkDeleteSelect(chapId){
+  if(bulkDeleteSelected.has(chapId)) bulkDeleteSelected.delete(chapId);
+  else bulkDeleteSelected.add(chapId);
+  renderDetailChapList();
+}
+
+// 全選／取消全選「目前分頁看得到的章節」，而不是整本小說所有章節，
+// 避免使用者在「番外」分頁按全選，結果不小心連正篇都被選進去。
+function bulkDeleteSelectAllVisible(){
+  const n=novels[activeNovel];
+  if(!n) return;
+  const sorted=getSortedChapterIndices(n);
+  const shownIdxs = sorted.filter(i=>isSideStory(n.chapters[i])===(detailChapTab==='extra'));
+  const shownIds = shownIdxs.map(i=>n.chapters[i]?.id).filter(Boolean);
+  const allSelected = shownIds.length>0 && shownIds.every(id=>bulkDeleteSelected.has(id));
+  if(allSelected) shownIds.forEach(id=>bulkDeleteSelected.delete(id));
+  else shownIds.forEach(id=>bulkDeleteSelected.add(id));
+  renderDetailChapList();
+}
+
+function confirmBulkDelete(){
+  const n=novels[activeNovel];
+  if(!n || !bulkDeleteSelected.size) return;
+  const count = bulkDeleteSelected.size;
+  showConfirm(`確定刪除選取的 ${count} 個章節？此動作無法復原。`, ()=>{
+    const delIds = new Set(bulkDeleteSelected);
+    const delIdxsDesc = [];
+    n.chapters.forEach((c,i)=>{ if(c.id && delIds.has(c.id)) delIdxsDesc.push(i); });
+    const delIdxsAsc = [...delIdxsDesc];
+    delIdxsDesc.sort((a,b)=>b-a); // 由後往前刪，前面章節的位置才不會在刪除過程中被打亂
+
+    delIdxsDesc.forEach(i=> n.chapters.splice(i,1));
+    invalidateChapterOrder(n);
+    if(n.id) delIds.forEach(id=> markChapterDeletedForSync(n.id, id));
+
+    // 跟單章刪除一樣，把「上次讀到哪」「目前在看哪章」的指標換算到刪除後的新位置，
+    // 避免因為陣列位置整批往前移，指標悄悄指到別的章節內容。
+    const remap=(idx)=>{
+      if(idx==null || !n.chapters.length) return n.chapters.length?0:null;
+      if(delIdxsAsc.includes(idx)){
+        let cand=idx-1;
+        while(cand>=0 && delIdxsAsc.includes(cand)) cand--;
+        idx=Math.max(0,cand);
+      }
+      const shift = delIdxsAsc.filter(d=>d<idx).length;
+      return Math.max(0, Math.min(idx-shift, n.chapters.length-1));
+    };
+    n.lastChapter = remap(n.lastChapter);
+    if(activeNovel>=0 && n===novels[activeNovel]) activeChapter = remap(activeChapter);
+
+    persist();
+    triggerCloudSyncAfterEdit();
+    bulkDeleteMode = false;
+    bulkDeleteSelected.clear();
+    renderDetailChapList();
+    renderShelf();
+    showToast(`✅ 已刪除 ${count} 個章節`);
   });
 }
 
@@ -1833,6 +1957,25 @@ function extractChapNum(title){
   return null;
 }
 
+// Like extractChapNum, but for titles that cover a *range* of chapters in one
+// entry — e.g. "1-5"、"第1-5章"、"01~05" (used when several original chapters
+// were merged into one file). Returns [start,end] so all numbers in between
+// count as "present" and don't get flagged as missing later; falls back to
+// a single-number range when there's no dash/range pattern. Guards against
+// a wildly large span (some unrelated number pair, e.g. a stray ID) being
+// misread as a range.
+function extractChapRange(title){
+  if(!title) return null;
+  let m=title.match(/(\d+)\s*[-~～至到]\s*(\d+)/);
+  if(m){
+    const a=parseInt(m[1]), b=parseInt(m[2]);
+    const lo=Math.min(a,b), hi=Math.max(a,b);
+    if(!isNaN(lo) && !isNaN(hi) && hi-lo<=500) return [lo,hi];
+  }
+  const n=extractChapNum(title);
+  return n==null ? null : [n,n];
+}
+
 // Look at a novel's 正篇 (non-side-story) chapters and report gaps in the
 // numbering, split into two kinds:
 // - internal: a gap between the lowest and highest number present
@@ -1841,19 +1984,21 @@ function extractChapNum(title){
 //   leading=[1,2,3,4,5,6]) — flagged more gently since some books
 //   genuinely aren't archived from chapter 1.
 // Chapters with no recognizable number, and duplicate numbers, are simply
-// ignored (not treated as gaps).
+// ignored (not treated as gaps). Chapters titled as a range (see
+// extractChapRange) count as covering every number in that range.
 function findMissingChapterNumbers(n){
-  const nums=(n.chapters||[])
+  const ranges=(n.chapters||[])
     .filter(c=>!isSideStory(c))
-    .map(c=>extractChapNum(c.title))
+    .map(c=>extractChapRange(c.title))
     .filter(v=>v!=null);
-  if(!nums.length) return {leading:[],internal:[]};
-  const present=new Set(nums);
-  const min=Math.min(...nums), max=Math.max(...nums);
+  if(!ranges.length) return {leading:[],internal:[]};
+  const present=new Set();
+  ranges.forEach(([a,b])=>{ for(let i=a;i<=b;i++) present.add(i); });
+  const min=Math.min(...present), max=Math.max(...present);
   const leading=[];
   if(min>1){ for(let i=1;i<min;i++) leading.push(i); }
   const internal=[];
-  if(nums.length>=2){ for(let i=min;i<=max;i++){ if(!present.has(i)) internal.push(i); } }
+  if(ranges.length>=2){ for(let i=min;i<=max;i++){ if(!present.has(i)) internal.push(i); } }
   return {leading,internal};
 }
 // Formats a missing-chapter warning from findMissingChapterNumbers()'s
@@ -2197,6 +2342,7 @@ function saveInlineEdit(){
   c.content=newContent;
   invalidateChapterOrder(n);
   persist();
+  triggerCloudSyncAfterEdit();
   renderContent(pane, newContent);
   scrollBox.scrollTop=beforeTop;
   exitInlineEditUI();
@@ -2968,13 +3114,21 @@ function initSwatches(){
 // ══ Novel tags ══
 const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
 let tagState={add:[],edit:[]};
+// 除了固定的內建標籤，也把所有小說「已經用過」的自訂標籤收集起來，
+// 這樣輸入過一次的自訂標籤，之後就會變成可以直接點選的選項，不用每次重打。
+function getKnownTags(){
+  const known=[...PRESET_TAGS];
+  novels.forEach(n=>(n.tags||[]).forEach(t=>{ if(t && !known.includes(t)) known.push(t); }));
+  return known;
+}
 function renderTagUI(mode){
   const presetWrap=document.getElementById(mode==='add'?'addTagPresets':'editTagPresets');
   const chipWrap=document.getElementById(mode==='add'?'addTagChips':'editTagChips');
   if(!presetWrap||!chipWrap)return;
   const tags=tagState[mode];
+  const knownTags=getKnownTags();
   presetWrap.innerHTML='';
-  PRESET_TAGS.forEach(t=>{
+  knownTags.forEach(t=>{
     const btn=document.createElement('button');
     btn.type='button';
     btn.className='theme-btn'+(tags.includes(t)?' active':'');
@@ -2983,7 +3137,9 @@ function renderTagUI(mode){
     presetWrap.appendChild(btn);
   });
   chipWrap.innerHTML='';
-  const customTags=tags.filter(t=>!PRESET_TAGS.includes(t));
+  // 這裡只會剩下「這次新打、還沒被任何小說用過」的全新標籤，用可移除的 chip 顯示；
+  // 一旦存檔，它就會被 novels 收錄，下次打開就會自動變成上面可點選的選項。
+  const customTags=tags.filter(t=>!knownTags.includes(t));
   if(customTags.length===0 && tags.length===0){
     const hint=document.createElement('span');
     hint.style.cssText='font-size:12px;color:var(--ink-3)';
@@ -3602,7 +3758,9 @@ function confirmChapter(){
     }
   }
   invalidateChapterOrder(n);
-  persist();closeModal("chapterModal");renderToc();
+  persist();
+  triggerCloudSyncAfterEdit();
+  closeModal("chapterModal");renderToc();
   loadChapter(targetIdx);
   showToast(editingChapterIdx>=0?"✅ 章節已更新":"✅ 章節已新增");
   // Refresh detail page if visible, showing whichever tab this chapter belongs to
@@ -3635,7 +3793,9 @@ function deleteChapter(){
     n.lastChapter=remap(n.lastChapter);
     activeChapter=remap(activeChapter);
 
-    persist();closeModal("chapterModal");renderToc();
+    persist();
+    triggerCloudSyncAfterEdit();
+    closeModal("chapterModal");renderToc();
     if(activeChapter!=null && activeChapter>=0) loadChapter(activeChapter);
     showToast("已刪除章節");
     const dv3=document.getElementById("viewDetail");
