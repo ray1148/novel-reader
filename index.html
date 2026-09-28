@@ -178,7 +178,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 /* Reader */
 .reader-wrap{flex:1;display:flex;overflow:hidden;transition:margin-right .25s;min-width:0}
 .reader-wrap.panel-open{margin-right:var(--panel-w)}
-.pane{flex:1;overflow-y:auto;padding:16px 32px 600px;min-width:0;padding-top:16px}
+.pane{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 32px 600px;min-width:0;padding-top:16px}
 .pane-content{font-size:17px;line-height:2.1;white-space:pre-wrap;word-break:break-word;font-family:var(--font-body);max-width:680px;margin:0 auto}
 .pane+.pane{border-left:1px solid var(--paper-3)}
 .pane-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
@@ -253,6 +253,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .detail-chap-item.active-chap{border-left:3px solid var(--gold);padding-left:13px;background:var(--gold-bg)}
 .detail-chap-item.bulk-selected{background:var(--gold-bg)}
 .detail-chap-check{width:17px;height:17px;flex-shrink:0;accent-color:var(--gold);cursor:pointer}
+.img-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;overflow:auto;touch-action:pinch-zoom}
+.img-lightbox img{display:block;margin:auto;max-width:none;cursor:zoom-out}
 .detail-chap-num{font-size:11px;color:var(--ink-3);min-width:28px}
 .detail-chap-title{font-size:14px;color:var(--ink);flex:1}
 .detail-chap-actions{display:flex;gap:6px;opacity:0;transition:opacity .15s}
@@ -413,6 +415,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
         <button class="btn-primary btn-sm" onclick="openAddModal()">＋ 新增小說</button>
       </div>
     </div>
+    <div id="shelfBucketRow" style="display:none;gap:8px;margin-bottom:10px"></div>
     <div id="shelfTagFilterRow" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
     <div class="empty-shelf" id="shelfEmpty" style="display:none">
       <div class="big-icon">📚</div>
@@ -457,11 +460,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
     <div class="detail-section-title">
       <span>章節目錄</span>
       <div style="display:flex;gap:8px" id="detailChapNormalActions">
-        <button class="btn-g btn-sm" onclick="openChapterModal(activeNovel)">&#65291; 新增</button>
-        <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
-          <input type="file" accept=".txt" multiple id="detailBatchFiles" style="display:none">
-          &#128196; 批次
-        </label>
+        <button class="btn-g btn-sm" onclick="triggerBatchImport('detailBatchFiles')">&#65291; 新增</button>
+        <input type="file" accept=".txt,image/*" multiple id="detailBatchFiles" style="display:none">
         <button class="btn-g btn-sm" onclick="toggleBulkDeleteMode()" title="一次選取多個章節刪除">&#128465; 多選</button>
       </div>
       <div style="display:none;gap:8px;align-items:center" id="detailChapBulkActions">
@@ -497,11 +497,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
       <div class="toc-top">
         <span class="toc-label">目錄</span>
         <div style="display:flex;gap:6px">
-          <button class="btn-ghost btn-sm" onclick="openChapterModal(activeNovel)" title="新增單一章節">＋</button>
-          <label class="btn-ghost btn-sm" title="批次上傳多個 .txt 檔" style="cursor:pointer;display:inline-flex;align-items:center">
-            <input type="file" accept=".txt" multiple id="batchChapFiles" style="display:none">
-            &#128196;&#43;
-          </label>
+          <button class="btn-ghost btn-sm" onclick="triggerBatchImport('batchChapFiles')" title="新增章節（批次匯入 .txt 或截圖）">＋</button>
+          <input type="file" accept=".txt,image/*" multiple id="batchChapFiles" style="display:none">
           <button class="toc-toggle" onclick="toggleToc()">✕</button>
         </div>
       </div>
@@ -911,6 +908,14 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
           <input type="text" class="pinput" id="editTagInput" placeholder="自訂標籤，按 Enter 新增" style="font-size:13px" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTag('edit');}">
           <button class="btn-g btn-sm" onclick="addCustomTag('edit')">＋ 新增</button>
         </div>
+      </div>
+      <div class="msection">
+        <label>書架分類</label>
+        <select id="editShelfBucket" class="pinput" style="font-size:13px">
+          <option value="auto">自動（有缺集數就放「未完成」）</option>
+          <option value="incomplete">固定放「未完成」</option>
+          <option value="all">固定放「全部」</option>
+        </select>
       </div>
       <div class="msection"><label>封面圖片</label>
         <label class="file-drop" style="padding:12px">
@@ -1454,12 +1459,54 @@ function computeNovelPct(n){
 
 // ══ Shelf ══
 let shelfTagFilter=[]; // selected tags to filter by (OR logic); empty = show all
+let shelfBucket='all'; // 'all' | 'incomplete'
+
+// 「未完成」判斷：n.shelfBucket 為 'incomplete'/'all' 代表使用者手動固定；
+// 沒設定（自動）就看章節編號有沒有缺（中間缺集或開頭不是第1章）。
+function getMissingInfo(n){
+  try{ return findMissingChapterNumbers(n); }catch(e){ return {leading:[],internal:[]}; }
+}
+function isNovelIncomplete(n){
+  if(n.shelfBucket==='incomplete') return true;
+  if(n.shelfBucket==='all') return false;
+  const m=getMissingInfo(n);
+  return m.leading.length>0 || m.internal.length>0;
+}
+function setNovelBucket(idx,bucket){
+  const n=novels[idx]; if(!n) return;
+  n.shelfBucket=bucket; // 'incomplete' | 'all' | undefined(自動)
+  if(bucket===undefined) delete n.shelfBucket;
+  persist();
+  if(typeof triggerCloudSyncAfterEdit==='function') triggerCloudSyncAfterEdit();
+  renderShelf();
+}
+function renderShelfBucketRow(){
+  const row=document.getElementById("shelfBucketRow");
+  if(!row) return;
+  if(!novels.length){ row.style.display="none"; row.innerHTML=""; return; }
+  const incCount=novels.filter(isNovelIncomplete).length;
+  const allCount=novels.length-incCount;
+  if(shelfBucket==='incomplete' && incCount===0) shelfBucket='all';
+  row.style.display="flex";
+  row.innerHTML="";
+  [['all','全部',allCount],['incomplete','未完成',incCount]].forEach(([key,label,cnt])=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="theme-btn"+(shelfBucket===key?" active":"");
+    b.textContent=`${label} (${cnt})`;
+    b.onclick=()=>{ shelfBucket=key; shelfTagFilter=[]; renderShelf(); };
+    row.appendChild(b);
+  });
+}
 function renderShelfTagFilter(){
   const row=document.getElementById("shelfTagFilterRow");
   if(!row)return;
   // Collect all tags actually in use, in order of first appearance
   const allTags=[];
-  novels.forEach(n=>(n.tags||[]).forEach(t=>{ if(!allTags.includes(t)) allTags.push(t); }));
+  novels.forEach(n=>{
+    if(isNovelIncomplete(n)!==(shelfBucket==='incomplete')) return; // 只列出目前分頁裡的書用到的標籤
+    (n.tags||[]).forEach(t=>{ if(!allTags.includes(t)) allTags.push(t); });
+  });
   // Drop selected tags that no longer exist on any book
   shelfTagFilter=shelfTagFilter.filter(t=>allTags.includes(t));
   if(allTags.length===0){ row.style.display="none"; row.innerHTML=""; return; }
@@ -1489,6 +1536,7 @@ function renderShelf(){
   const emptyMsg=document.getElementById("shelfEmpty");
   const filterEmptyMsg=document.getElementById("shelfFilterEmpty");
   if(!grid)return;
+  renderShelfBucketRow();
   renderShelfTagFilter();
   grid.innerHTML="";
   if(!novels.length){
@@ -1504,6 +1552,7 @@ function renderShelf(){
     const tb = novels[b].lastOpenedAt || 0;
     return tb - ta;
   });
+  sortedIndices = sortedIndices.filter(i=>isNovelIncomplete(novels[i])===(shelfBucket==='incomplete'));
   if(shelfTagFilter.length>0){
     sortedIndices = sortedIndices.filter(i=>{
       const tags=novels[i].tags||[];
@@ -1590,6 +1639,35 @@ function renderShelf(){
     metaEl.textContent=(n.author?n.author+" · ":"")+chapInfo;
     info.appendChild(nameEl);
     info.appendChild(metaEl);
+    if(shelfBucket==='incomplete'){
+      const m=getMissingInfo(n);
+      const parts=[];
+      if(m.internal.length) parts.push("缺 "+(m.internal.length<=6?m.internal.join("、"):m.internal.slice(0,6).join("、")+"…共"+m.internal.length)+" 章");
+      if(m.leading.length) parts.push("前 "+m.leading.length+" 章未收錄");
+      if(parts.length && n.shelfBucket!=='incomplete'){
+        const why=document.createElement("div");
+        why.className="book-meta";
+        why.style.color="var(--red)";
+        why.textContent=parts.join("；");
+        info.appendChild(why);
+      } else if(n.shelfBucket==='incomplete'){
+        const why=document.createElement("div");
+        why.className="book-meta";
+        why.textContent="（手動加入）";
+        info.appendChild(why);
+      }
+    }
+    const moveBtn=document.createElement("button");
+    moveBtn.type="button";
+    moveBtn.className="btn-ghost btn-sm";
+    moveBtn.style.cssText="margin-top:4px;font-size:11px;padding:2px 8px";
+    moveBtn.textContent=shelfBucket==='incomplete'?"↩ 移回全部":"＋ 移到未完成";
+    moveBtn.addEventListener("click",e=>{
+      e.stopPropagation();
+      setNovelBucket(i, shelfBucket==='incomplete'?'all':'incomplete');
+      showToast(shelfBucket==='incomplete'?"已移回「全部」":"已移到「未完成」");
+    });
+    info.appendChild(moveBtn);
     card.appendChild(info);
 
     card.addEventListener("click",()=>openNovel(i));
@@ -2200,7 +2278,9 @@ function renderToc(){
     empty.textContent="這個分類目前沒有章節";
     list.appendChild(empty);
   }
-  // Add chapter buttons at bottom of list
+  // Add chapter button at bottom of list. Button text still says "＋ 新增
+  // 章節" but only does batch .txt import now — manual single-chapter add
+  // is rarely used, so it's dropped from this shortcut.
   const btnRow=document.createElement("div");
   btnRow.style.cssText="display:flex;gap:8px;margin:10px 14px";
 
@@ -2208,15 +2288,13 @@ function renderToc(){
   addBtn.className="toc-add-btn";
   addBtn.style.cssText="flex:1;margin:0";
   addBtn.textContent="＋ 新增章節";
-  addBtn.addEventListener("click",()=>openChapterModal(activeNovel));
+  addBtn.addEventListener("click",()=>triggerBatchImport('batchChapFiles2'));
   btnRow.appendChild(addBtn);
 
-  const batchLabel=document.createElement("label");
-  batchLabel.className="toc-add-btn";
-  batchLabel.style.cssText="flex:1;margin:0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px";
-  batchLabel.title="一次選多個 .txt 檔";
-  batchLabel.innerHTML='<input type="file" accept=".txt" multiple id="batchChapFiles2" style="display:none">&#128196; 批次匯入';
-  btnRow.appendChild(batchLabel);
+  const batchInput=document.createElement("input");
+  batchInput.type="file";batchInput.accept=".txt,image/*";batchInput.multiple=true;
+  batchInput.id="batchChapFiles2";batchInput.style.display="none";
+  btnRow.appendChild(batchInput);
 
   list.appendChild(btnRow);
 }
@@ -2275,6 +2353,18 @@ function enterInlineEdit(){
   inlineEditOrigContent=c.content||"";
 
   pane.innerHTML="";
+  const colorBar=document.createElement("div");
+  colorBar.style.cssText="display:flex;gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap";
+  colorBar.innerHTML=
+    '<span style="font-size:12px;color:var(--ink-3)">選取文字套用顏色：</span>'+
+    '<button type="button" class="color-mark-btn" style="background:#e53935" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'red\',\'inlineEditArea\')" title="紅"></button>'+
+    '<button type="button" class="color-mark-btn" style="background:#1e88e5" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'blue\',\'inlineEditArea\')" title="藍"></button>'+
+    '<button type="button" class="color-mark-btn" style="background:#f9a825" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'yellow\',\'inlineEditArea\')" title="黃"></button>'+
+    '<button type="button" class="color-mark-btn" style="background:#43a047" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'green\',\'inlineEditArea\')" title="綠"></button>'+
+    '<button type="button" class="color-mark-btn" style="background:#fb8c00" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'orange\',\'inlineEditArea\')" title="橘"></button>'+
+    '<button type="button" class="color-mark-btn" style="background:#8e24aa" onmousedown="event.preventDefault()" onclick="insertColorMarker(\'purple\',\'inlineEditArea\')" title="紫"></button>'+
+    '<button type="button" class="btn-g btn-sm" style="font-size:11px;padding:3px 10px" onmousedown="event.preventDefault()" onclick="clearColorMarker(\'inlineEditArea\')">清除顏色</button>';
+  pane.appendChild(colorBar);
   const ta=document.createElement("textarea");
   ta.id="inlineEditArea";
   ta.value=inlineEditOrigContent;
@@ -2606,7 +2696,7 @@ function showUIBriefly(){
 
 // ══ Header buttons ══
 document.getElementById("btnSplit").onclick=function(){splitMode=!splitMode;this.classList.toggle("active",splitMode);const c=novels[activeNovel]?.chapters[activeChapter];document.getElementById("paneRight").style.display=(splitMode&&c?.origin)?"block":"none";};
-function togglePanel(){panelOpen=!panelOpen;document.getElementById("aiPanel").classList.toggle("open",panelOpen);document.getElementById("readerWrap").classList.toggle("panel-open",panelOpen);document.getElementById("btnAI").classList.toggle("active",panelOpen);if(panelOpen&&curTab==="progress")updateProgress();if(panelOpen&&curTab==="convert")updateConvert();}
+function togglePanel(){panelOpen=!panelOpen;document.getElementById("aiPanel").classList.toggle("open",panelOpen);document.getElementById("readerWrap").classList.toggle("panel-open",panelOpen);document.getElementById("btnAI").classList.toggle("active",panelOpen);if(panelOpen&&curTab==="progress")updateProgress();if(panelOpen&&curTab==="convert")updateConvert();fitContentImages();setTimeout(fitContentImages,300);}
 document.getElementById("btnAI").onclick=togglePanel;
 
 // ══ Panel tabs ══
@@ -2941,7 +3031,12 @@ document.querySelectorAll(".modal-overlay").forEach(el=>el.addEventListener("cli
 let pendingCoverImg = null;
 
 // Resize image to maxW x maxH while keeping aspect ratio, returns base64
-function resizeImage(file, maxW, maxH, quality=0.92){
+// Resize image to maxW x maxH while keeping aspect ratio, returns base64.
+// format defaults to JPEG (small, fine for photos/covers); pass
+// 'image/png' for screenshot-style content where JPEG's block compression
+// blurs sharp text edges — PNG is lossless so text stays crisp (quality
+// is ignored for PNG, harmless to still pass it in).
+function resizeImage(file, maxW, maxH, quality=0.92, format='image/jpeg'){
   return new Promise(resolve=>{
     const reader=new FileReader();
     reader.onload=e=>{
@@ -2954,8 +3049,11 @@ function resizeImage(file, maxW, maxH, quality=0.92){
         }
         const c=document.createElement("canvas");
         c.width=w; c.height=h;
-        c.getContext("2d").drawImage(img,0,0,w,h);
-        resolve(c.toDataURL("image/jpeg", quality));
+        const ctx=c.getContext("2d");
+        ctx.imageSmoothingEnabled=true;
+        ctx.imageSmoothingQuality="high";
+        ctx.drawImage(img,0,0,w,h);
+        resolve(c.toDataURL(format, quality));
       };
       img.src=e.target.result;
     };
@@ -2976,8 +3074,12 @@ function handleCoverImg(inp){
 // ── Inline color markers in content ──
 const CONTENT_COLORS = { red:'#e53935', blue:'#1e88e5', yellow:'#f9a825', green:'#43a047', orange:'#fb8c00', purple:'#8e24aa' };
 
-function insertColorMarker(color){
-  const ta = document.getElementById("chapContent");
+// targetId 讓紅/藍/黃…按鈕可以重複用在不同的編輯框上（完整編輯視窗的
+// #chapContent，或閱讀畫面行內編輯的 #inlineEditArea），預設仍是
+// #chapContent 以維持舊呼叫方式不用全部改。
+function insertColorMarker(color, targetId){
+  const ta = document.getElementById(targetId||"chapContent");
+  if(!ta) return;
   const start = ta.selectionStart ?? ta.value.length;
   const end   = ta.selectionEnd   ?? ta.value.length;
   const before = ta.value.slice(0, start);
@@ -2988,10 +3090,12 @@ function insertColorMarker(color){
   ta.value = before + wrapped + after;
   ta.focus();
   ta.setSelectionRange(before.length, before.length + wrapped.length);
+  ta.dispatchEvent(new Event("input")); // 讓行內編輯框的自動長高（autoGrow）跟著更新
 }
 
-function clearColorMarker(){
-  const ta = document.getElementById("chapContent");
+function clearColorMarker(targetId){
+  const ta = document.getElementById(targetId||"chapContent");
+  if(!ta) return;
   const start = ta.selectionStart ?? 0;
   const end   = ta.selectionEnd   ?? ta.value.length;
   const before = ta.value.slice(0, start);
@@ -3000,15 +3104,23 @@ function clearColorMarker(){
   ta.value = before + cleared + after;
   ta.focus();
   ta.setSelectionRange(before.length, before.length + cleared.length);
+  ta.dispatchEvent(new Event("input"));
 }
 
 // ── Inline images in content ──
+// 章節內文的插圖（尤其像整頁文字截圖那種）用 PNG 無損格式，不是 JPEG。
+// JPEG 的區塊壓縮對「銳利邊緣」（文字筆畫的邊界）特別不友善，即使把
+// 品質調到很高、解析度也給很大，文字邊緣還是會有一圈模糊的壓縮殘影，
+// 這就是「圖片看起來模糊」的真正原因——不是解析度不夠，是格式本身
+// 不適合拿來存文字截圖。PNG 是無損的，文字邊緣完全不會糊。缺點是
+// 檔案通常比 JPEG 大，但這類截圖（大面積色塊 + 文字）PNG 其實壓縮
+// 得也不差，換來的銳利度很值得。
 function insertInlineImages(inp){
   const files = Array.from(inp.files); if(!files.length) return;
   const ta = document.getElementById("chapContent");
   let loaded = 0;
   files.forEach(f => {
-    resizeImage(f, 1100, 1100, 0.85).then(data=>{
+    resizeImage(f, 2000, 3000, 0.92, 'image/png').then(data=>{
       const tag = `
 [IMG:${data}]
 `;
@@ -3051,8 +3163,10 @@ function renderContentSegment(target, text){
     if(m){
       const img = document.createElement("img");
       img.src = m[1];
-      img.style.cssText = "max-width:100%;border-radius:6px;margin:16px 0;display:block";
+      img.style.cssText = "max-width:100%;border-radius:6px;margin:16px 0;display:block;cursor:zoom-in";
       img.loading = "lazy";
+      img.title = "點一下看原始大小";
+      img.addEventListener("click", ()=>openImageLightbox(img.src));
       target.appendChild(img);
     } else if(part){
       const span = document.createElement("span");
@@ -3061,6 +3175,30 @@ function renderContentSegment(target, text){
       target.appendChild(span);
     }
   });
+}
+
+// 點內文圖片看「原始大小」用的簡易燈箱：直接顯示圖片本來的像素尺寸
+// （不套 max-width 限制），外層可以捲動/手機上可以用系統原生的雙指縮放看
+// 細節，不會因為顯示縮小就跟著模糊——因為圖片資料本身完全沒變，只是
+// 平常在內文裡用 max-width:100% 塞進版面顯示而已。
+function imgLightboxEscHandler(e){ if(e.key==='Escape') closeImageLightbox(); }
+function closeImageLightbox(){
+  const el=document.getElementById('imgLightboxOverlay');
+  if(el) el.remove();
+  document.removeEventListener('keydown', imgLightboxEscHandler);
+}
+function openImageLightbox(src){
+  closeImageLightbox();
+  const overlay=document.createElement('div');
+  overlay.className='img-lightbox';
+  overlay.id='imgLightboxOverlay';
+  overlay.title='點一下關閉';
+  const img=document.createElement('img');
+  img.src=src;
+  overlay.appendChild(img);
+  overlay.addEventListener('click', closeImageLightbox);
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown', imgLightboxEscHandler);
 }
 
 function renderContent(el, raw){
@@ -3077,7 +3215,33 @@ function renderContent(el, raw){
     lastIndex = colorRe.lastIndex;
   }
   if(lastIndex < raw.length) renderContentSegment(el, raw.slice(lastIndex));
+  fitContentImages();
 }
+
+// 內文圖片放大：閱讀欄 .pane-content 為了好讀限制在 680px，但截圖裡的字
+// 很小，塞在 680px 裡會看不清楚。這裡量 .pane 目前「真實可用寬度」
+// （AI 面板開著時 .pane 本身就會變窄，所以會自動反映），讓圖片往左右
+// 撐出閱讀欄、最寬撐到 .pane 寬度（上限 1100px），文字欄位不受影響。
+function fitContentImages(){
+  document.querySelectorAll('.pane-content img').forEach(img=>{
+    const paneEl=img.closest('.pane'), contentEl=img.closest('.pane-content');
+    if(!paneEl||!contentEl) return;
+    const paneW=paneEl.clientWidth, contentW=contentEl.clientWidth;
+    const desired=Math.min(paneW-24, 1100);
+    if(desired<=contentW+4){
+      img.style.width=''; img.style.maxWidth='100%';
+      img.style.marginLeft=''; img.style.marginRight='';
+      return;
+    }
+    const extra=(desired-contentW)/2;
+    img.style.width='100%';
+    img.style.maxWidth=desired+'px';
+    img.style.marginLeft='-'+extra+'px';
+    img.style.marginRight='-'+extra+'px';
+  });
+}
+let _fitImgTimer=null;
+window.addEventListener('resize',()=>{ clearTimeout(_fitImgTimer); _fitImgTimer=setTimeout(fitContentImages,150); });
 
 // appendChapNav removed (replaced by bottom bar)
 
@@ -3358,6 +3522,8 @@ function openEditNovelModal(idx){
   initEditSwatches();
   tagState.edit=[...(n.tags||[])];
   renderTagUI('edit');
+  const bsel=document.getElementById("editShelfBucket");
+  if(bsel) bsel.value=n.shelfBucket||"auto";
   openModal("editNovelModal");
 }
 function handleEditCoverImg(inp){
@@ -3383,6 +3549,8 @@ function confirmEditNovel(){
   n.author=document.getElementById("editNovelAuthor").value.trim();
   n.color=selectedColor;
   n.tags=[...tagState.edit];
+  const bsel=document.getElementById("editShelfBucket");
+  if(bsel){ if(bsel.value==="auto") delete n.shelfBucket; else n.shelfBucket=bsel.value; }
   if(pendingEditCoverImg!==undefined) n.coverImg=pendingEditCoverImg;
   persist();closeModal("editNovelModal");renderShelf();showToast("✅ 已更新書籍資訊");
 }
@@ -3427,6 +3595,7 @@ function exportNovel(idx){
       color:n.color||COVER_COLORS[0],
       coverImg:n.coverImg||null,
       tags:n.tags||[],
+      shelfBucket:n.shelfBucket||'',
       extraManualOrder:!!n.extraManualOrder,
       chapters:(n.chapters||[]).map(c=>({
         title:c.title||'', content:c.content||'',
@@ -3461,6 +3630,7 @@ function importNovelFile(inputEl){
         color:nd.color||COVER_COLORS[0],
         coverImg:nd.coverImg||null,
         tags:Array.isArray(nd.tags)?nd.tags:[],
+        ...(nd.shelfBucket ? {shelfBucket:nd.shelfBucket} : {}),
         extraManualOrder:!!nd.extraManualOrder,
         chapters:(Array.isArray(nd.chapters)?nd.chapters:[]).map(c=>({
           id:genId('ch'),
@@ -3498,6 +3668,14 @@ function confirmAddNovel(){
 }
 
 // Chapter modal
+// ══ 新增章節按鈕：只做批次匯入 ══
+// 按鈕文字還是「新增」，但因為單一章節手動新增很少用到，
+// 直接點下去就觸發對應的隱藏 file input 選檔，不再跳選單。
+function triggerBatchImport(fileInputId){
+  const inp=document.getElementById(fileInputId);
+  if(inp) inp.click();
+}
+
 function openChapterModal(novelIdx,chapIdx=-1){
   editingChapterIdx=chapIdx;
   const isEdit=chapIdx>=0,n=novels[novelIdx],c=isEdit?n.chapters[chapIdx]:{};
@@ -3674,8 +3852,17 @@ function initBatchUpload(){
   document.addEventListener("change", function(e){
     if(e.target && (e.target.id==="batchChapFiles"||e.target.id==="batchChapFiles2"||e.target.id==="detailBatchFiles")){
       if(!e.target.files.length) return;
-      batchImportChapters(Array.from(e.target.files));
+      const files = Array.from(e.target.files);
       e.target.value = "";
+      // 使用者可能在同一次選檔裡混選 .txt 跟截圖，兩種要用不同方式處理
+      // （.txt 直接讀檔當內文；圖片要先送去 OCR 辨識），所以先分組，
+      // 都跑完（依序，不要同時搶同一個進度條）才算這次匯入結束。
+      const txtFiles = files.filter(f=>/\.txt$/i.test(f.name));
+      const imgFiles = files.filter(f=>!/\.txt$/i.test(f.name) && (f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)));
+      (async()=>{
+        if(txtFiles.length) await batchImportChapters(txtFiles);
+        if(imgFiles.length) await batchImportImageChapters(imgFiles);
+      })();
     }
   });
 }
@@ -3718,20 +3905,87 @@ async function batchImportChapters(files){
   msg.textContent = `完成！共匯入 ${done} 個章節`;
   invalidateChapterOrder(n);
   persist();
+  triggerCloudSyncAfterEdit();
 
-  setTimeout(()=>{
-    overlay.style.display = 'none';
-    renderToc();
-    // load first newly added chapter
-    const firstNew = n.chapters.length - done;
-    if(firstNew >= 0) loadChapter(firstNew);
-    showToast('✅ 已匯入 ' + done + ' 個章節');
-    const missing=findMissingChapterNumbers(n);
-    if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
-    const dv4=document.getElementById("viewDetail");
-    if(dv4&&dv4.classList.contains("active")) renderDetailChapList();
-    renderShelf();
-  }, 800);
+  await new Promise(r=>setTimeout(r,800));
+  overlay.style.display = 'none';
+  renderToc();
+  // load first newly added chapter
+  const firstNew = n.chapters.length - done;
+  if(firstNew >= 0) loadChapter(firstNew);
+  showToast('✅ 已匯入 ' + done + ' 個章節');
+  const missing=findMissingChapterNumbers(n);
+  if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+  const dv4=document.getElementById("viewDetail");
+  if(dv4&&dv4.classList.contains("active")) renderDetailChapList();
+  renderShelf();
+}
+
+// 跟 batchImportChapters 對稱，但吃的是截圖檔：每張圖（如果很長，會先
+// 用 sliceTallImage 切成好幾段）都送去 OCR 辨識成文字，整張圖辨識完
+// 的文字合起來當作「一個章節」，章節標題直接拿檔名（去掉副檔名）。
+// 需要先在設定頁填 Anthropic API Key，跟單張截圖辨識共用同一支
+// ocrImageToText。某一張辨識失敗不會擋住其他張，最後會統一提示
+// 幾張成功、幾張失敗。
+async function batchImportImageChapters(files){
+  if(activeNovel < 0){ showToast('請先開啟一本小說'); return; }
+  if(!getApiKey()){ showToast('請先到設定頁填入 Anthropic API Key 才能匯入截圖章節'); return; }
+  files.sort((a,b) => a.name.localeCompare(b.name, 'zh-TW', {numeric:true}));
+
+  const overlay = document.getElementById('batchOverlay');
+  const bar     = document.getElementById('batchBar');
+  const msg     = document.getElementById('batchMsg');
+  overlay.style.display = 'flex';
+
+  const n = novels[activeNovel];
+  let done = 0, failCount = 0;
+
+  for(const f of files){
+    const title = f.name.replace(/\.(png|jpe?g|webp|gif|bmp)$/i,'');
+    bar.style.width = (done / files.length * 100) + '%';
+    try{
+      const segs = await sliceTallImage(f);
+      let text = '';
+      for(let s=0;s<segs.length;s++){
+        msg.textContent = segs.length>1
+          ? `(${done+1}/${files.length}) 辨識中：${f.name}（第 ${s+1}/${segs.length} 段）`
+          : `(${done+1}/${files.length}) 辨識中：${f.name}`;
+        const segText = await ocrImageToText(segs[s]);
+        text += (text?'\n':'') + segText;
+      }
+      n.chapters.push({
+        id: genId('ch'),
+        title,
+        content: text,
+        origin: '',
+        origContent: '',
+        origOrigin: '',
+      });
+    } catch(e){
+      console.error('批次截圖辨識失敗', f.name, e);
+      failCount++;
+    }
+    done++;
+  }
+
+  const addedCount = done - failCount;
+  bar.style.width = '100%';
+  msg.textContent = failCount ? `完成，但有 ${failCount} 張辨識失敗` : `完成！共匯入 ${addedCount} 個章節`;
+  invalidateChapterOrder(n);
+  persist();
+  triggerCloudSyncAfterEdit();
+
+  await new Promise(r=>setTimeout(r,800));
+  overlay.style.display = 'none';
+  renderToc();
+  const firstNew = n.chapters.length - addedCount;
+  if(addedCount>0 && firstNew >= 0) loadChapter(firstNew);
+  showToast(failCount ? `⚠️ 已匯入 ${addedCount} 個章節，${failCount} 張辨識失敗` : '✅ 已匯入 ' + addedCount + ' 個章節（截圖辨識）');
+  const missing=findMissingChapterNumbers(n);
+  if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
+  const dv4b=document.getElementById("viewDetail");
+  if(dv4b&&dv4b.classList.contains("active")) renderDetailChapList();
+  renderShelf();
 }
 
 function readFile(f){return new Promise((r,j)=>{const fr=new FileReader();fr.onload=e=>r(e.target.result);fr.onerror=j;fr.readAsText(f,"utf-8");});}
@@ -4341,7 +4595,7 @@ function saveSyncMeta(m){
 function novelMetaHash(n, chapterHashMap){
   const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
   const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
-  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
+  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],shelfBucket:n.shelfBucket||'',chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -4538,7 +4792,7 @@ async function fbBackup(auto){
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
           id:n.id, name:n.name||'', author:n.author||'', color:n.color||'',
           converted:n.converted||false, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
-          chapterCount:mergedChapterOrder.length, tags:n.tags||[], chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
+          chapterCount:mergedChapterOrder.length, tags:n.tags||[], shelfBucket:n.shelfBucket||'', chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
           chapterHashes:mergedChapterHashes,
           coverHash: n.coverImg ? hashStr(n.coverImg) : null,
         });
@@ -4863,6 +5117,7 @@ async function _doRestore(){
         lastRead:  nData.lastRead  || null,
         lastChapter,
         tags:      nData.tags      || [],
+        ...(nData.shelfBucket ? {shelfBucket:nData.shelfBucket} : {}),
         extraManualOrder: !!nData.extraManualOrder,
         chapters,
       });
