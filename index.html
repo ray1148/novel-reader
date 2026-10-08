@@ -3339,18 +3339,29 @@ function fitContentImages(){
   document.querySelectorAll('.pane-content img').forEach(img=>{
     const paneEl=img.closest('.pane'), contentEl=img.closest('.pane-content');
     if(!paneEl||!contentEl) return;
-    const paneW=paneEl.clientWidth, contentW=contentEl.clientWidth;
-    const desired=Math.min(paneW-24, 1100);
-    if(desired<=contentW+4){
-      img.style.width=''; img.style.maxWidth='100%';
-      img.style.marginLeft=''; img.style.marginRight='';
+    // 還沒載入完就拿不到原始寬度，等載入完再重算一次
+    if(!img.complete||!img.naturalWidth){
+      img.addEventListener('load',fitContentImages,{once:true});
       return;
     }
-    const extra=(desired-contentW)/2;
-    img.style.width='100%';
-    img.style.maxWidth=desired+'px';
-    img.style.marginLeft='-'+extra+'px';
-    img.style.marginRight='-'+extra+'px';
+    const paneW=paneEl.clientWidth, contentW=contentEl.clientWidth;
+    // 目標寬度：不超過 .pane 可用寬度（上限 1100px），也不放大超過圖片原始
+    // 寬度（放大會糊）
+    const target=Math.round(Math.min(paneW-24, 1100, img.naturalWidth));
+    // 之前歪一邊的原因：寬度用 100% 又加左右負邊界，寬度沒變大、只是整張往左
+    // 移。現在改成直接指定「像素寬度」，再用對稱的負邊界往兩側各撐出一半，
+    // 圖片就會剛好以閱讀欄中線為中心。
+    img.style.display='block';
+    img.style.maxWidth='none';
+    img.style.width=target+'px';
+    if(target>contentW){
+      const extra=Math.round((target-contentW)/2);
+      img.style.marginLeft='-'+extra+'px';
+      img.style.marginRight='-'+extra+'px';
+    } else {
+      img.style.marginLeft='auto';
+      img.style.marginRight='auto';
+    }
   });
 }
 let _fitImgTimer=null;
