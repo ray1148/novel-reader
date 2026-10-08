@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="google" content="notranslate">
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <!-- 加到主畫面後以全螢幕獨立視窗開啟，不顯示網址列 -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1695,6 +1696,7 @@ function showDetail(idx){
   detailChapTab='main';
   bulkDeleteMode=false;
   bulkDeleteSelected.clear();
+  detailChapPage=null; // null = 還沒決定頁碼，交給 renderDetailChapList 算「上次讀到的章節」在第幾頁
   // Record last opened time for sorting
   n.lastOpenedAt = Date.now();
   persist();
@@ -1746,7 +1748,15 @@ function showDetail(idx){
 // Which tab is showing in the detail page's chapter list: 'main' or 'extra'
 // (番外). Reset to 'main' whenever a different novel's detail page opens.
 let detailChapTab = 'main';
-function setDetailChapTab(tab){ detailChapTab=tab; bulkDeleteSelected.clear(); renderDetailChapList(); }
+function setDetailChapTab(tab){ detailChapTab=tab; bulkDeleteSelected.clear(); detailChapPage=0; renderDetailChapList(); }
+
+// 章節目錄分頁：章節一多，一條長長的下拉列表很難找，所以切成一頁一頁。
+// null 代表「還沒決定頁碼」，renderDetailChapList 第一次畫的時候會自動
+// 算出「上次讀到的章節」落在第幾頁，直接跳過去，不用使用者自己往下找；
+// 之後使用者自己翻頁、或是編輯／刪除章節導致重新畫面，都會維持原本在
+// 看的那一頁（只做邊界夾擠，不會又跳回去）。
+let detailChapPage = null;
+const DETAIL_CHAP_PAGE_SIZE = 50;
 
 function renderDetailChapList(){
   const n=novels[activeNovel];
@@ -1816,7 +1826,17 @@ function renderDetailChapList(){
     return;
   }
 
-  shown.forEach((realIdx,pos)=>{
+  const totalPages=Math.max(1, Math.ceil(shown.length/DETAIL_CHAP_PAGE_SIZE));
+  if(detailChapPage==null){
+    const resumePos=shown.indexOf(resumeChap);
+    detailChapPage = resumePos>=0 ? Math.floor(resumePos/DETAIL_CHAP_PAGE_SIZE) : 0;
+  }
+  detailChapPage = Math.min(Math.max(0, detailChapPage), totalPages-1);
+  const pageStart = detailChapPage*DETAIL_CHAP_PAGE_SIZE;
+  const pageItems = shown.slice(pageStart, pageStart+DETAIL_CHAP_PAGE_SIZE);
+
+  pageItems.forEach((realIdx,i)=>{
+    const pos = pageStart+i;
     const c=n.chapters[realIdx];
     const item=document.createElement("div");
     const isSel = bulkDeleteMode && c.id && bulkDeleteSelected.has(c.id);
@@ -1869,6 +1889,52 @@ function renderDetailChapList(){
     }
     list.appendChild(item);
   });
+
+  if(totalPages>1){
+    // 上下各放一組翻頁按鈕：往下看到列表底部不用再捲回頂端才能翻頁，
+    // 反過來在頂端也能直接翻。兩組是各自獨立的 DOM（同一個元素不能同時
+    // 放在兩個地方），所以用函式各建一份。
+    const goPage=(p)=>{
+      detailChapPage=p;
+      renderDetailChapList();
+      document.getElementById("detailChapList").scrollIntoView({block:"start",behavior:"smooth"});
+    };
+    const buildPager=(isTop)=>{
+      const pager=document.createElement("div");
+      pager.style.cssText="display:flex;align-items:center;justify-content:center;gap:10px;"+
+        (isTop?"margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--paper-3)"
+              :"margin-top:14px;padding-top:10px;border-top:1px solid var(--paper-3)");
+      const mkBtn=(label,disabled,onClick)=>{
+        const b=document.createElement("button");
+        b.type="button";
+        b.className="btn-g btn-sm";
+        b.textContent=label;
+        b.disabled=disabled;
+        b.style.opacity=disabled?"0.4":"1";
+        if(!disabled) b.addEventListener("click",onClick);
+        return b;
+      };
+      pager.appendChild(mkBtn("‹ 上一頁", detailChapPage===0, ()=>goPage(detailChapPage-1)));
+      const sel=document.createElement("select");
+      sel.className="pinput";
+      sel.style.cssText="font-size:13px;padding:4px 8px;width:auto";
+      for(let p=0;p<totalPages;p++){
+        const opt=document.createElement("option");
+        opt.value=p;
+        const rangeStart=p*DETAIL_CHAP_PAGE_SIZE+1, rangeEnd=Math.min((p+1)*DETAIL_CHAP_PAGE_SIZE, shown.length);
+        opt.textContent=`第 ${p+1}/${totalPages} 頁 (${rangeStart}-${rangeEnd})`;
+        if(p===detailChapPage) opt.selected=true;
+        sel.appendChild(opt);
+      }
+      sel.addEventListener("change",()=>goPage(parseInt(sel.value,10)));
+      pager.appendChild(sel);
+      pager.appendChild(mkBtn("下一頁 ›", detailChapPage>=totalPages-1, ()=>goPage(detailChapPage+1)));
+      return pager;
+    };
+    list.insertBefore(buildPager(true), list.firstChild);
+    list.appendChild(buildPager(false));
+  }
+
   const cntEl=document.getElementById("bulkSelCount");
   if(cntEl) cntEl.textContent = `已選 ${bulkDeleteSelected.size} 個`;
 }
@@ -2348,6 +2414,10 @@ function enterInlineEdit(){
   const pane=document.getElementById("paneContent");
   const scrollBox=document.getElementById("paneLeft");
   const beforeTop=scrollBox.scrollTop;
+  // 要算「游標大概該放在文字的哪裡」，得趁畫面還是原本唯讀內容時先量好
+  // 捲動範圍，等一下 pane 被換成 textarea，這些尺寸就不是原本那個了
+  const beforeScrollH=scrollBox.scrollHeight;
+  const beforeClientH=scrollBox.clientHeight;
 
   inlineEditing=true;
   inlineEditOrigContent=c.content||"";
@@ -2376,10 +2446,20 @@ function enterInlineEdit(){
   ta.addEventListener("input", autoGrow);
   pane.appendChild(ta);
   autoGrow();
-  // 換成 textarea 之後整體高度會略為變動（textarea 的預設行為跟純顯示不完全
-  // 一樣），這裡用「原本捲動的像素位置」直接還原，肉眼感覺就是留在原地
-  scrollBox.scrollTop=beforeTop;
+
+  // 原本的問題：textarea 塞進 value 之後直接 focus()，瀏覽器預設會把游標
+  // 擺在整段文字「最後面」，接著自動幫你捲到游標可見的地方——等於不管
+  // 你原本讀到哪，一律跳去章節最末端編輯。
+  // 修法：先依照原本讀到的捲動位置比例，换算成文字大概第幾個字，把游標
+  // 擺在那附近再 focus()，這樣瀏覽器要捲的話也是捲回差不多原本的地方；
+  // 最後再用 requestAnimationFrame 把捲動位置精準校正回 beforeTop，蓋掉
+  // focus() 可能附帶的任何微調，確保畫面真的留在原地。
+  const range=beforeScrollH-beforeClientH;
+  const ratio=range>0?Math.min(1,Math.max(0,beforeTop/range)):0;
+  const approxPos=Math.round(ratio*inlineEditOrigContent.length);
   ta.focus();
+  ta.setSelectionRange(approxPos, approxPos);
+  requestAnimationFrame(()=>{ scrollBox.scrollTop=beforeTop; });
 
   renderInlineEditToolbar();
   // 編輯的時候把上方工具列固定顯示，不要照平常閱讀模式那樣幾秒後自動收合
@@ -3036,6 +3116,39 @@ let pendingCoverImg = null;
 // 'image/png' for screenshot-style content where JPEG's block compression
 // blurs sharp text edges — PNG is lossless so text stays crisp (quality
 // is ignored for PNG, harmless to still pass it in).
+// 跟 resizeImage 不同：那支是「寬跟高一起夾」，對長截圖（寬不大、高很誇張）
+// 會出問題——因為兩個邊都要塞進各自的上限，整張圖的縮放比例被「高度」
+// 那個上限卡住，結果連寬度都被迫跟著縮小很多，文字就整個糊掉、變很小。
+// 這支改成「先只看寬度」決定縮放比例，高度不管多長都跟著等比例放大，
+// 只有誇張到可能讓瀏覽器 canvas 爆掉的極端值，才會再用高度上限頂一次
+// （正常的章節截圖不會碰到這條安全閥）。
+function resizeImageByWidth(file, maxW, maxH, quality=0.92, format='image/png'){
+  return new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width, h=img.height;
+        let scale = w>maxW ? maxW/w : 1;
+        w=Math.round(w*scale); h=Math.round(h*scale);
+        if(h>maxH){
+          const r=maxH/h;
+          w=Math.round(w*r); h=Math.round(h*r);
+        }
+        const c=document.createElement("canvas");
+        c.width=w; c.height=h;
+        const ctx=c.getContext("2d");
+        ctx.imageSmoothingEnabled=true;
+        ctx.imageSmoothingQuality="high";
+        ctx.drawImage(img,0,0,w,h);
+        resolve(c.toDataURL(format, quality));
+      };
+      img.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function resizeImage(file, maxW, maxH, quality=0.92, format='image/jpeg'){
   return new Promise(resolve=>{
     const reader=new FileReader();
@@ -3120,7 +3233,7 @@ function insertInlineImages(inp){
   const ta = document.getElementById("chapContent");
   let loaded = 0;
   files.forEach(f => {
-    resizeImage(f, 2000, 3000, 0.92, 'image/png').then(data=>{
+    resizeImageByWidth(f, 2000, 10000, 0.92, 'image/png').then(data=>{
       const tag = `
 [IMG:${data}]
 `;
@@ -4019,7 +4132,7 @@ function confirmChapter(){
   showToast(editingChapterIdx>=0?"✅ 章節已更新":"✅ 章節已新增");
   // Refresh detail page if visible, showing whichever tab this chapter belongs to
   const dv2=document.getElementById("viewDetail");
-  if(dv2&&dv2.classList.contains("active")){ detailChapTab=isExtra?'extra':'main'; renderDetailChapList(); }
+  if(dv2&&dv2.classList.contains("active")){ detailChapTab=isExtra?'extra':'main'; detailChapPage=null; renderDetailChapList(); }
   renderShelf();
 }
 function deleteChapter(){
@@ -5687,6 +5800,12 @@ async function init(){
   try{initBatchUpload();}catch(e){console.error("batch init error:",e);}
 }
 init();
+</script>
+<script>
+// 註冊 Service Worker（GitHub Pages 是 https 才會生效；本機直接開檔案會自動略過）
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW 註冊失敗',e)); });
+}
 </script>
 </body>
 </html>
