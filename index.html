@@ -4898,7 +4898,26 @@ async function fbBackup(auto){
           if(remoteNovel && Array.isArray(remoteNovel.chapterOrder)){
             const localIdSet  = new Set(localChapterOrder);
             const tombstoned  = new Set(deletedChapterKeys.filter(k=>k.startsWith(t.id+'::')).map(k=>k.slice(t.id.length+2)));
-            const extraIds    = remoteNovel.chapterOrder.filter(cid=>!localIdSet.has(cid) && !tombstoned.has(cid));
+            let extraIds    = remoteNovel.chapterOrder.filter(cid=>!localIdSet.has(cid) && !tombstoned.has(cid));
+            // 過濾「內容其實跟本機某章一模一樣、只是 id 不同」的雲端章節（以及雲端
+            // 自己彼此重複的）。這種重複通常是兩台裝置各自產生了不同的章節 id，
+            // 合併時被當成「別台新增的章節」留下來，越合併越多，還原後整本書就
+            // 變成好幾份重複章節。這裡不把它們放進清單，並順手把雲端那份多餘的
+            // 章節文件刪掉。
+            const remoteHashes = remoteNovel.chapterHashes || {};
+            const seenHash = new Set(Object.values(localChapterHashes));
+            const dupIds = [];
+            extraIds = extraIds.filter(cid=>{
+              const h = remoteHashes[cid];
+              if(!h) return true; // 沒有雜湊值可比對，保守起見保留
+              if(seenHash.has(h)){ dupIds.push(cid); return false; }
+              seenHash.add(h);
+              return true;
+            });
+            for(const cid of dupIds){
+              await deleteCol(`users/${uid}/novels/n_${t.id}/chapters/c_${cid}/images`).catch(()=>{});
+              await fsRestDelete(`users/${uid}/novels/n_${t.id}/chapters/c_${cid}`).catch(()=>{});
+            }
             if(extraIds.length){
               mergedChapterOrder  = [...localChapterOrder, ...extraIds];
               mergedChapterHashes = {...localChapterHashes};
@@ -5204,9 +5223,22 @@ async function _doRestore(){
 
     // 3. 組合成最終的小說陣列（維持原本順序，跳過抓取失敗的章節）
     const restoredNovels = [];
+    const dedupedNovelIds = new Set();
+    let dedupedTotal = 0;
     novelMetas.forEach((nData, ni)=>{
       if(!nData) return;
-      const chapters = (chaptersByNovel[ni]||[]).filter(c=>c!==undefined);
+      let chapters = (chaptersByNovel[ni]||[]).filter(c=>c!==undefined);
+      // 去除重複章節：標題、內文、原文對照等完全相同的章節只留第一份。雲端
+      // 的章節清單如果混進了「同內容不同 id」的殘留，還原後就會一本書好幾份
+      // 重複章節，這裡直接擋掉。
+      {
+        const seen=new Set(); const before=chapters.length;
+        chapters=chapters.filter(c=>{ const h=chapterHash(c); if(seen.has(h)) return false; seen.add(h); return true; });
+        if(chapters.length<before){
+          dedupedNovelIds.add(nData.id);
+          dedupedTotal += before-chapters.length;
+        }
+      }
       // 閱讀進度（讀到哪一章、滑到多少）是裝置本機專屬的，雲端根本不存這個。
       // 還原時直接沿用「這台裝置」原本記錄的進度（用章節 id 對回新資料），
       // 而不是拿雲端的東西蓋過去——這樣同一帳號在不同裝置上各自閱讀/測試，
@@ -5253,7 +5285,9 @@ async function _doRestore(){
     fbDirty = false;
     saveSyncMeta({novels: Object.fromEntries(novels.map(n=>[
       n.id,
-      {metaHash:novelMetaHash(n), chapters:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])), coverHash:n.coverImg?hashStr(n.coverImg):null}
+      // 有清掉重複章節的小說，把 metaHash 設成 null，下次備份會強制重傳這本的
+      // 章節清單，順便把雲端多餘的重複章節清掉
+      {metaHash:dedupedNovelIds.has(n.id)?null:novelMetaHash(n), chapters:Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)])), coverHash:n.coverImg?hashStr(n.coverImg):null}
     ]))});
     bar.style.width = '90%';
     msg.textContent = '套用設定...';
@@ -5285,7 +5319,8 @@ async function _doRestore(){
     msg.textContent = '還原完成！備份時間：' + ts;
     setTimeout(()=>{ overlay.style.display='none'; }, 1200);
     setFbStatus('✅ 還原成功！備份時間：' + ts);
-    showToast('✅ 還原成功！');
+    showToast(dedupedTotal ? `✅ 還原成功！已自動清掉 ${dedupedTotal} 個重複章節` : '✅ 還原成功！');
+    if(dedupedTotal) triggerCloudSyncAfterEdit(); // 順便清理雲端那份殘留
     renderShelf();
     goShelf();
   } catch(e){
