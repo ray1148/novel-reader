@@ -65,7 +65,7 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .shelf{flex:1;overflow-y:auto;padding:28px 24px}
 .shelf-header{font-size:13px;color:var(--ink-3);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
 .shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:20px}
-.book-card{display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:transform .15s}
+.book-card{display:flex;flex-direction:column;gap:8px;cursor:pointer;transition:transform .15s;content-visibility:auto;contain-intrinsic-size:auto 280px}
 .book-card:hover{transform:translateY(-3px)}
 .book-cover{aspect-ratio:2/3;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden;box-shadow:3px 4px 12px rgba(0,0,0,.18),inset -2px 0 4px rgba(0,0,0,.1)}
 .book-cover-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
@@ -270,6 +270,8 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 
 /* ── Settings view ── */
 .settings-page{flex:1;overflow-y:auto;padding:28px 24px;display:flex;flex-direction:column;gap:24px}
+.folder-drop-hint{display:none;position:fixed;inset:12px;z-index:99998;border:3px dashed var(--gold);border-radius:16px;background:rgba(0,0,0,.55);color:#fff;align-items:center;justify-content:center;flex-direction:column;gap:10px;font-size:18px;font-weight:600;pointer-events:none;text-align:center;padding:20px}
+.folder-drop-hint small{font-size:13px;font-weight:400;opacity:.85;line-height:1.7}
 .rank-weekbar{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
 .rank-weeklabel{font-size:14px;font-weight:600;min-width:150px;text-align:center}
 .rank-row{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--paper-3)}
@@ -437,6 +439,8 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <span>我的書架</span>
       <div style="display:flex;gap:8px">
         <button class="btn-g btn-sm" onclick="goRank()">🏆 排行榜</button>
+        <button class="btn-g btn-sm" onclick="document.getElementById('folderInput').click()" title="選一個資料夾：資料夾名稱＝書名，.txt＝章節，圖片會依文章裡寫的檔名插入">📁 匯入資料夾</button>
+        <input type="file" id="folderInput" webkitdirectory multiple style="display:none">
         <button class="btn-g btn-sm" onclick="openSearchModal()">🔍 搜尋</button>
         <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
           <input type="file" accept=".json" id="importNovelFile" style="display:none" onchange="importNovelFile(this)">
@@ -462,6 +466,8 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
 </div>
 
 <!-- ══ NOVEL DETAIL VIEW ══ -->
+<div class="folder-drop-hint" id="folderDropHint">📁 放開滑鼠，匯入資料夾<small>資料夾名稱 ＝ 書名　　.txt 檔 ＝ 章節<br>文章裡寫到圖片檔名的地方，會自動插入那張圖</small></div>
+
 <!-- ══ RANKING VIEW ══ -->
 <div class="view" id="viewRank">
   <div class="settings-page">
@@ -504,8 +510,10 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       &#9654; 繼續閱讀
       <span id="continueChapTitle" style="font-size:12px;opacity:.8;display:block;margin-top:2px"></span>
     </button>
+    <!-- 目錄頁分頁：章節 / 書籤 / 留言 -->
+    <div id="detailViewTabs" style="display:flex;gap:6px;padding:12px 16px 4px;flex-wrap:wrap"></div>
     <!-- Chapter list -->
-    <div class="detail-section-title">
+    <div class="detail-section-title" id="detailChapTitleBar">
       <span>章節目錄</span>
       <div style="display:flex;gap:8px" id="detailChapNormalActions">
         <button class="btn-g btn-sm" onclick="triggerBatchImport('detailBatchFiles')">&#65291; 新增</button>
@@ -522,6 +530,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <div id="detailChapWarning" style="display:none"></div>
     <div id="detailChapTabs" style="display:flex;gap:6px;margin:8px 0"></div>
     <div class="detail-chap-list" id="detailChapList"></div>
+    <div id="detailExtraList" style="display:none;padding:8px 0"></div>
   </div>
 </div>
 
@@ -1210,9 +1219,11 @@ function triggerCloudSyncAfterEdit(){
   if(!fbUser || !fsProjectId) return;
   clearTimeout(editSyncTimer);
   editSyncTimer = setTimeout(()=>{
-    fbBackup(true).then(()=>{
-      fbDirty = false;
-      showToast('☁️ 內文修改已同步至雲端');
+    fbBackup(true).then(ok=>{
+      // fbBackup 內部會把錯誤吞掉、只更新狀態文字，所以要看它回傳的結果；
+      // 以前這裡不管成敗都報「已同步」，失敗了使用者也看不出來
+      if(ok){ fbDirty = false; showToast('☁️ 內文修改已同步至雲端'); }
+      else showToast('⚠️ 雲端同步失敗，之後會自動重試（原因可在設定頁看）', 4500);
     }).catch(e=>{
       console.warn('編輯後自動同步失敗，等下次自動同步再重試:', e);
     });
@@ -1220,9 +1231,22 @@ function triggerCloudSyncAfterEdit(){
 }
 
 // ══ Persist ══
+// persist 會把「整個 novels」複製一份寫進 IndexedDB（結構化複製是在主執行緒同步做的），
+// 書裡塞了很多內嵌圖片的話，每呼叫一次就卡一下。很多操作（存進度、書籤、畫線、
+// 匯入…）會連續呼叫它，所以合併成「停手 0.6 秒後才真的寫一次」；切到背景或關閉
+// 頁面前會立刻補寫，避免遺失。
+let persistTimer=null;
 function persist(){
   fbDirty=true;
-  // 寫入 IndexedDB（非同步、容量遠大於 localStorage，不會卡住畫面）
+  clearTimeout(persistTimer);
+  persistTimer=setTimeout(persistNow, 600);
+}
+function flushPersist(){ if(persistTimer){ clearTimeout(persistTimer); persistNow(); } }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') flushPersist(); });
+window.addEventListener('pagehide', flushPersist);
+function persistNow(){
+  persistTimer=null;
+  // 寫入 IndexedDB（非同步、容量遠大於 localStorage）
   idbSet('novels', novels).catch(e=>{
     console.error('IndexedDB 儲存失敗，改用 localStorage 備援', e);
     try{
@@ -1505,6 +1529,7 @@ function goUserSettings(){showView("viewUserSettings");}
 // scroll position inside the current chapter, instead of just counting
 // whole chapters. This keeps the bookshelf cover, detail page, and the
 // in-reader progress panel all showing the same, more accurate number.
+const _lenCache=new WeakMap();
 function computeNovelPct(n){
   const totalChaps=n.chapters?n.chapters.length:0;
   if(!totalChaps) return 0;
@@ -1514,15 +1539,23 @@ function computeNovelPct(n){
   const sorted=getSortedChapterIndices(n);
   const curPos=sorted.indexOf(n.lastChapter);
   if(curPos<0) return 0;
-  const totalChars=n.chapters.reduce((s,c)=>s+(c.content||"").length,0);
+  // 每章字數也記起來（內容有改動時 _chapVer 會 +1），不然每次畫書架都要把所有章節內文掃一遍
+  const lsig=totalChaps+'|'+(n._chapVer||0);
+  let lc=_lenCache.get(n);
+  if(!lc || lc.sig!==lsig){
+    const lens=n.chapters.map(c=>(c.content||"").length);
+    lc={sig:lsig, lens, total:lens.reduce((a,b)=>a+b,0)};
+    _lenCache.set(n,lc);
+  }
+  const totalChars=lc.total;
   if(!totalChars){
     // No character data available (e.g. empty chapters) — fall back to
     // simple chapter-count based estimate.
     return Math.round(((curPos+1)/totalChaps)*100);
   }
   let charsRead=0;
-  for(let i=0;i<curPos;i++) charsRead+=(n.chapters[sorted[i]].content||"").length;
-  charsRead+=(n.chapters[n.lastChapter].content||"").length*(n.chapters[n.lastChapter].scrollPct||0);
+  for(let i=0;i<curPos;i++) charsRead+=lc.lens[sorted[i]]||0;
+  charsRead+=(lc.lens[n.lastChapter]||0)*(n.chapters[n.lastChapter].scrollPct||0);
   return Math.min(100,Math.round((charsRead/totalChars)*100));
 }
 
@@ -1532,8 +1565,18 @@ let shelfBucket='all'; // 'all' | 'incomplete'
 
 // 「未完成」判斷：n.shelfBucket 為 'incomplete'/'all' 代表使用者手動固定；
 // 沒設定（自動）就看章節編號有沒有缺（中間缺集或開頭不是第1章）。
+// 書架每次重畫都要對每本書判斷「有沒有缺章」，而判斷要逐章解析標題；書多章節多時，
+// 一次重畫就要跑好幾輪（分頁列、標籤列、篩選各一次）。結果只跟「章節數、章節版本號、
+// 分類設定」有關，所以記起來，章節有變動（新增/刪除/改標題都會讓版本號 +1）才重算。
+const _missingCache=new WeakMap();
 function getMissingInfo(n){
-  try{ return findMissingChapterNumbers(n); }catch(e){ return {leading:[],internal:[]}; }
+  const sig=(n.shelfBucket||'')+'|'+(n.chapters?n.chapters.length:0)+'|'+(n._chapVer||0);
+  const c=_missingCache.get(n);
+  if(c && c.sig===sig) return c.v;
+  let v;
+  try{ v=findMissingChapterNumbers(n); }catch(e){ v={leading:[],internal:[]}; }
+  _missingCache.set(n,{sig,v});
+  return v;
 }
 function isNovelIncomplete(n){
   if(n.shelfBucket==='incomplete') return true;
@@ -1656,6 +1699,7 @@ function renderShelf(){
     if(n.coverImg){
       const img=document.createElement("img");
       img.className="book-cover-img";
+      img.decoding="async"; img.loading="lazy"; // 封面是 base64、數量多時，同步解碼會卡住首次畫面
       img.src=n.coverImg;
       cover.appendChild(img);
     } else {
@@ -1764,6 +1808,7 @@ function showDetail(idx){
   detailChapTab='main';
   bulkDeleteMode=false;
   bulkDeleteSelected.clear();
+  detailView='chapters';
   detailChapPage=null; // null = 還沒決定頁碼，交給 renderDetailChapList 算「上次讀到的章節」在第幾頁
   // Record last opened time for sorting
   n.lastOpenedAt = Date.now();
@@ -1826,7 +1871,41 @@ function setDetailChapTab(tab){ detailChapTab=tab; bulkDeleteSelected.clear(); d
 let detailChapPage = null;
 const DETAIL_CHAP_PAGE_SIZE = 50;
 
+// 目錄(詳情)頁的分頁：章節 / 🔖 書籤 / 💬 留言。書籤跟留言的清單內容跟閱讀畫面
+// 目錄側邊欄用同一套函式畫，只是畫到這個頁面的容器裡。
+let detailView = 'chapters';
+function setDetailView(k){ detailView=k; renderDetailChapList(); }
+function renderDetailViewTabs(){
+  const el=document.getElementById('detailViewTabs'); if(!el) return;
+  const n=novels[activeNovel]; if(!n){ el.innerHTML=''; return; }
+  const bc=(n.bookmarks||[]).length, nc=collectNotes(n).length;
+  el.innerHTML='';
+  [['chapters','章節'],['bookmarks','🔖 書籤'+(bc?` (${bc})`:'')],['notes','💬 留言'+(nc?` (${nc})`:'')]].forEach(([k,label])=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='theme-btn'+(detailView===k?' active':''); b.textContent=label;
+    b.onclick=()=>setDetailView(k);
+    el.appendChild(b);
+  });
+}
+function applyDetailViewVisibility(){
+  const chap=detailView==='chapters';
+  const show=(id,disp)=>{ const e=document.getElementById(id); if(e) e.style.display=disp; };
+  show('detailChapTitleBar', chap?'flex':'none');
+  show('detailChapTabs', chap?'flex':'none');
+  show('detailChapList', chap?'block':'none');
+  show('detailExtraList', chap?'none':'block');
+  if(!chap) show('detailChapWarning','none');
+}
+function renderDetailExtra(){
+  const el=document.getElementById('detailExtraList'); if(!el) return;
+  if(detailView==='bookmarks') renderBookmarksList(el,'detail');
+  else if(detailView==='notes') renderNotesList(el,'detail');
+}
+
 function renderDetailChapList(){
+  renderDetailViewTabs();
+  applyDetailViewVisibility();
+  if(detailView!=='chapters'){ renderDetailExtra(); return; }
   const n=novels[activeNovel];
   const list=document.getElementById("detailChapList");
   const tabsEl=document.getElementById("detailChapTabs");
@@ -2363,6 +2442,7 @@ function renderToc(){
   list.innerHTML="";
   renderTocViewTabs();
   if(tocView==='notes'){ if(tabsEl) tabsEl.innerHTML=""; renderNotesList(); return; }
+  if(tocView==='bookmarks'){ if(tabsEl) tabsEl.innerHTML=""; renderBookmarksList(); return; }
   if(!n.chapters.length){
     if(tabsEl) tabsEl.innerHTML="";
     const empty=document.createElement("div");
@@ -2909,23 +2989,45 @@ function addBookmark(){
   const n=novels[activeNovel],pct=n.scrollPct||0,c=n.chapters[activeChapter]||{};
   const text=c.content||"",pos=Math.round(pct*text.length),snip=text.substring(pos,pos+60).replace(/\n/g," ");
   if(!n.bookmarks)n.bookmarks=[];
-  n.bookmarks.push({pct,snip,chapIdx:activeChapter,chapTitle:c.title||"第"+(activeChapter+1)+"章"});
+  n.bookmarks.push({pct,snip,chapIdx:activeChapter,chapTitle:c.title||"第"+(activeChapter+1)+"章",createdAt:Date.now()});
   n.lastRead=new Date().toLocaleString("zh-TW",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
-  persist();renderBookmarks();showToast("📌 書籤已新增");
+  persist();triggerCloudSyncAfterEdit();refreshBookmarkViews();showToast("📌 書籤已新增");
 }
-function jumpBk(i){if(activeNovel<0)return;const bk=novels[activeNovel].bookmarks[i];loadChapter(bk.chapIdx||0);setTimeout(()=>{const p=document.getElementById("paneLeft");p.scrollTop=bk.pct*(p.scrollHeight-p.clientHeight);},100);showToast("跳至 "+Math.round(bk.pct*100)+"%");}
-function delBk(i){novels[activeNovel].bookmarks.splice(i,1);persist();renderBookmarks();}
+// 書籤有兩種來源：AI 面板「＋ 加書籤」（存 pct、snip），跟閱讀工具列的 🔖
+// （早期只存 scrollPct）。統一用這個函式取得位置百分比，舊資料才不會變成 NaN%。
+function bkPct(b){ return typeof b.pct==="number"?b.pct:(typeof b.scrollPct==="number"?b.scrollPct:0); }
+function jumpBk(i){
+  if(activeNovel<0)return;
+  const bk=novels[activeNovel].bookmarks[i]; if(!bk) return;
+  if(typeof inlineEditing!=="undefined" && inlineEditing){ showToast("請先儲存或取消編輯再跳轉"); return; }
+  const pct=bkPct(bk);
+  const inReader=document.getElementById("viewNovel").classList.contains("active");
+  if(inReader) loadChapter(bk.chapIdx||0); else startReading(bk.chapIdx||0); // 從目錄頁點的話要先進到閱讀畫面
+  setTimeout(()=>{const p=document.getElementById("paneLeft");p.scrollTop=pct*(p.scrollHeight-p.clientHeight);},inReader?120:320);
+  showToast("跳至 "+Math.round(pct*100)+"%");
+}
+function refreshBookmarkViews(){
+  renderBookmarks(); renderTocViewTabs();
+  if(tocView==='bookmarks') renderBookmarksList();
+  const dv=document.getElementById("viewDetail");
+  if(dv&&dv.classList.contains("active")) renderDetailChapList();
+}
+function delBk(i){
+  novels[activeNovel].bookmarks.splice(i,1);
+  persist(); triggerCloudSyncAfterEdit(); refreshBookmarkViews();
+}
 function renderBookmarks(){
   const list=document.getElementById("bkList");
   if(activeNovel<0){list.innerHTML="";return;}
   const bks=novels[activeNovel].bookmarks||[];
   if(!bks.length){list.innerHTML='<div class="bk-empty">還沒有書籤</div>';return;}
+  list.innerHTML="";
   bks.forEach((b,i)=>{
     const item=document.createElement("div");item.className="bk-item";
-    const pctEl=document.createElement("span");pctEl.className="bk-pct";pctEl.textContent=Math.round(b.pct*100)+"%";
+    const pctEl=document.createElement("span");pctEl.className="bk-pct";pctEl.textContent=Math.round(bkPct(b)*100)+"%";
     const mid=document.createElement("div");mid.style.flex="1";
     const chapEl=document.createElement("div");chapEl.style.cssText="font-size:11px;color:var(--ink-3)";chapEl.textContent=b.chapTitle||"";
-    const snipEl=document.createElement("div");snipEl.className="bk-text";snipEl.textContent=(b.snip||"")+"...";
+    const snipEl=document.createElement("div");snipEl.className="bk-text";snipEl.textContent=b.snip?b.snip+"...":"";
     mid.appendChild(chapEl);mid.appendChild(snipEl);
     const delEl=document.createElement("span");delEl.className="bk-del";delEl.textContent="✕";
     delEl.addEventListener("click",e=>{e.stopPropagation();delBk(i);});
@@ -3331,9 +3433,10 @@ function insertInlineImages(inp){
   const ta = document.getElementById("chapContent");
   let loaded = 0;
   files.forEach(f => {
-    resizeImageByWidth(f, 2000, 10000, 0.92, 'image/png').then(data=>{
+    resizeImageByWidth(f, 2000, 10000, 0.92, 'image/png').then(async data=>{
+      const ref = await storeImage(data); // 外存；失敗才退回內嵌
       const tag = `
-[IMG:${data}]
+[IMG:${ref?('ref:'+ref):data}]
 `;
       const pos = ta.selectionStart ?? ta.value.length;
       ta.value = ta.value.slice(0,pos) + tag + ta.value.slice(pos);
@@ -3367,13 +3470,91 @@ function reinsertInlineImages(content, imageMap){
   });
 }
 
+// ══ 內文圖片外存 ══
+// 以前圖片是整段 base64 直接塞在章節文字裡（[IMG:data:image/png;base64,...]），
+// 一本書圖片一多，章節字串就變成幾十 MB：每次存進度／存檔都要把整包複製一遍、
+// 文字搜尋與 AI 索引要掃過那些亂碼、編輯框裡更是塞滿一大坨——整個網頁就會
+// 全面變慢。現在圖片另外存在 IndexedDB（key = img:<id>），章節文字裡只留一個
+// 很短的參照 [IMG:ref:<id>]（跟雲端同步用的格式一模一樣）。顯示時才去讀圖片。
+const imgCache=new Map(); // id -> dataURL，只留最近用過的幾張
+function imgCacheSet(id,data){
+  imgCache.delete(id); imgCache.set(id,data);
+  if(imgCache.size>24) imgCache.delete(imgCache.keys().next().value);
+}
+async function storeImage(dataUrl){ // 回傳參照 id；儲存失敗回傳 null（呼叫端要自己退回內嵌）
+  const id='img_'+hashStr(dataUrl);
+  const ok=await idbSet('img:'+id, dataUrl);
+  if(!ok) return null;
+  imgCacheSet(id,dataUrl);
+  return id;
+}
+async function loadImageData(id){
+  if(imgCache.has(id)){ const v=imgCache.get(id); imgCacheSet(id,v); return v; }
+  const v=await idbGet('img:'+id);
+  if(typeof v==='string' && v){ imgCacheSet(id,v); return v; }
+  return null;
+}
+// 同步到雲端用：章節裡的圖片可能是舊式內嵌、也可能是外存參照，兩種都收集起來
+async function collectChapterImages(content){
+  const {text, images}=extractInlineImages(content||'');
+  const seen=new Set(images.map(i=>i.id));
+  for(const m of text.matchAll(/\[IMG:ref:([^\]]+)\]/g)){
+    const id=m[1]; if(seen.has(id)) continue; seen.add(id);
+    const data=await loadImageData(id);
+    if(data) images.push({id,data});
+  }
+  return {text, images};
+}
+// 把舊資料裡內嵌的圖片搬到外存（背景慢慢做、一章一章來，不卡畫面）。
+// 搬完章節文字變很短，之後存檔／閱讀／搜尋都會順很多。儲存失敗的章節保持原樣。
+let migratingImgs=false;
+async function migrateInlineImagesToStore(force){
+  if(migratingImgs) return;
+  if(!force && localStorage.getItem('nr3_img_mig_done')==='1') return;
+  migratingImgs=true;
+  try{
+    let changed=0, failedAny=false;
+    for(const n of novels){
+      let nChanged=false;
+      for(const c of n.chapters){
+        for(const field of ['content','origContent']){
+          const t=c[field];
+          if(!t || t.indexOf('[IMG:data:')<0) continue;
+          const re=/\[IMG:(data:[^\]]+)\]/g;
+          let out='', last=0, m, ok=true;
+          while((m=re.exec(t))){
+            const id=await storeImage(m[1]);
+            if(!id){ ok=false; break; }
+            out+=t.slice(last,m.index)+`[IMG:ref:${id}]`;
+            last=re.lastIndex;
+          }
+          if(!ok){ failedAny=true; continue; }
+          c[field]=out+t.slice(last);
+          nChanged=true; changed++;
+          await new Promise(r=>setTimeout(r,0));
+        }
+      }
+      if(nChanged) invalidateChapterOrder(n);
+    }
+    if(changed){ persist(); console.log('已把 '+changed+' 處內嵌圖片搬到外存'); }
+    if(!failedAny) localStorage.setItem('nr3_img_mig_done','1'); // 全部搬完，之後開啟不必再掃一遍所有章節
+  }catch(e){ console.warn('圖片外存搬移失敗（不影響使用）', e); }
+  finally{ migratingImgs=false; }
+}
+
 function renderContentSegment(target, text){
   const parts = text.split(/(\[IMG:[^\]]+\])/);
   parts.forEach(part => {
     const m = part.match(/^\[IMG:(.+)\]$/);
     if(m){
       const img = document.createElement("img");
-      img.src = m[1];
+      if(m[1].startsWith("ref:")){
+        // 外存圖片：非同步讀出來再填進去；讀不到（例如雲端還原時那張沒抓到）就顯示提示文字
+        loadImageData(m[1].slice(4)).then(d=>{
+          if(d) img.src=d;
+          else { const miss=document.createElement("div"); miss.style.cssText="color:var(--ink-3);font-size:12px;margin:12px 0"; miss.textContent="［圖片遺失］"; img.replaceWith(miss); }
+        }).catch(()=>{});
+      } else img.src = m[1];
       img.style.cssText = "max-width:100%;border-radius:6px;margin:16px 0;display:block;cursor:zoom-in";
       img.loading = "lazy";
       img.title = "點一下看原始大小";
@@ -3667,6 +3848,233 @@ function saveRankEdits(){
   renderRank();
   showToast('✅ 本週名次已儲存');
 }
+
+
+// ══ 資料夾匯入：整個資料夾 → 一本書 ══
+// 資料夾名稱＝書名；資料夾裡（含子資料夾）每個 .txt＝一章，標題用檔名，照檔名的
+// 數字順序排；路徑裡有「番外／外傳／特典」字樣的子資料夾，章節會歸到番外。
+// 文章裡「寫到圖片檔名」的地方會換成那張圖，認得這些寫法（副檔名大小寫不拘）：
+//   [圖片:001.png]  【001.png】  <001.png>  (001.png)  ![](001.png)  [IMG:001.png]
+//   或直接寫 001.png；方括號/括號裡也可以省略副檔名，寫 [001] 或 [圖片:001]
+// 資料夾裡檔名叫「封面／cover」的圖片會當作封面。沒被文章引用到的圖片就不會用到。
+async function readTextSmart(file){
+  const buf=await file.arrayBuffer();
+  for(const enc of ['utf-8','big5','gb18030']){
+    try{
+      const t=new TextDecoder(enc,{fatal:true}).decode(buf);
+      return t.replace(/^\uFEFF/,'');
+    }catch(e){}
+  }
+  return new TextDecoder('utf-8').decode(buf);
+}
+function folderEscRe(x){ return x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+// 讓出主執行緒一下，瀏覽器才有機會重畫進度條、處理點擊；匯入大量圖片/章節時
+// 如果一路同步做到底，整個網頁會卡住（甚至被瀏覽器判定「沒有回應」）。
+const folderTick=()=>new Promise(r=>setTimeout(r,0));
+
+// 圖片編碼：盡量保持原樣清晰度，但雲端同步時每張圖是獨立文件、上限約 1MiB
+// （base64 後約 90 萬字元），超過的話同步會失敗，而且整本書塞太多超大圖也會讓
+// 網頁越來越慢。所以太大才逐步縮小寬度（PNG 維持無損，只是縮小）。
+async function encodeFolderImage(file){
+  const jpeg=/jpe?g/i.test(file.type)||/\.jpe?g$/i.test(file.name);
+  const LIMIT=900000;
+  const steps=jpeg?[[2000,0.95],[1600,0.9],[1300,0.85],[1000,0.8]]:[[2000,0.92],[1600,0.92],[1300,0.92],[1000,0.92]];
+  let data='';
+  for(const [w,q] of steps){
+    data=await resizeImageByWidth(file, w, 10000, q, jpeg?'image/jpeg':'image/png');
+    if(data.length<=LIMIT) break;
+    await folderTick();
+  }
+  return data;
+}
+
+async function importFolderAsNovel(name, items, setMsg){
+  const IMG_RE=/\.(png|jpe?g|webp|gif|bmp)$/i;
+  const cmp=(a,b)=>a.path.localeCompare(b.path,'zh-TW',{numeric:true});
+  const txts=items.filter(x=>/\.txt$/i.test(x.path)).sort(cmp);
+  if(!txts.length) return {ok:false, name, reason:'資料夾裡沒有 .txt 文章'};
+  const dirOf=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')):'';
+  const baseOf=p=>p.slice(p.lastIndexOf('/')+1);
+
+  // 圖片索引：完整檔名 / 不含副檔名 → 候選清單（同名時優先挑跟文章同資料夾的）
+  const entries=[]; const byFull=new Map(), byBase=new Map();
+  items.filter(x=>IMG_RE.test(x.path)).sort(cmp).forEach(x=>{
+    const fn=baseOf(x.path).normalize('NFC');
+    const e={file:x.file, fn, dir:dirOf(x.path), tag:null, done:false, used:false, idx:entries.length};
+    entries.push(e);
+    const full=fn.toLowerCase(), base=fn.replace(IMG_RE,'').toLowerCase();
+    if(!byFull.has(full)) byFull.set(full,[]); byFull.get(full).push(e);
+    if(!byBase.has(base)) byBase.set(base,[]); byBase.get(base).push(e);
+  });
+  const lookup=(nm,dir,fullOnly)=>{
+    const k=nm.normalize('NFC').trim().toLowerCase();
+    if(!k) return null;
+    const c=byFull.get(k)||(fullOnly?null:byBase.get(k))||[];
+    return c.length ? (c.find(e=>e.dir===dir)||c[0]) : null;
+  };
+  // 比對方式是「掃描文章 → 逐一查表」，不是把所有圖片檔名組成一個超長的正規表示式
+  // 去比對，所以圖片再多、文章再長，花費都跟文章長度成正比，不會爆炸。
+  const KEYWORD=/^\s*(?:圖片|图片|插圖|插图|圖|图|img|image|pic|photo)\s*[:：=]?\s*/i;
+  const lastSeg=t=>t.split(/[\\/]/).pop().trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g,'');
+  const resolveInner=(raw,dir)=>{
+    const seg=lastSeg(raw);
+    return lookup(seg,dir,false) || lookup(lastSeg(raw.replace(KEYWORD,'')),dir,false);
+  };
+  const mdRe=/!\[[^\]\n]*\]\(\s*([^()\n]{1,300}?)\s*\)/g;
+  const brRe=/[\[【［<〈（(｛{「『]([^\]】］>〉）)｝}」』\n]{1,300})[\]】］>〉）)｝}」』]/g;
+  const bareRe=/(?<![0-9A-Za-z_\-])([^\s\[\]()<>【】［］（）,，。;；!！?？"'“”‘’]{1,200}?\.(?:png|jpe?g|webp|gif|bmp))(?![0-9A-Za-z_])/gi;
+
+  // 封面
+  let coverImg=null;
+  const coverEntry=entries.find(e=>/^(封面|封面圖|cover)\./i.test(e.fn));
+  if(coverEntry){ try{ coverImg=await resizeImage(coverEntry.file,800,1200,0.92); }catch(e){} }
+
+  const chapters=[]; let imgInserted=0;
+  for(let i=0;i<txts.length;i++){
+    const t=txts[i];
+    const title=baseOf(t.path).replace(/\.txt$/i,'');
+    setMsg(`《${name}》處理章節 ${i+1}/${txts.length}：${title}`);
+    let text=await readTextSmart(t.file);
+    const dir=dirOf(t.path);
+    if(entries.length){
+      const refs=new Set();
+      const mark=e=>{ e.used=true; refs.add(e.idx); return `\u0001${e.idx}\u0002`; };
+      text=text.replace(mdRe,(m,inner)=>{ const e=resolveInner(inner,dir); return e?mark(e):m; });
+      text=text.replace(brRe,(m,inner)=>{ const e=resolveInner(inner,dir); return e?mark(e):m; });
+      text=text.replace(bareRe,(m,tok)=>{
+        // 檔名前面可能黏著中文字（例如「直接寫001.png」），從左到右逐步縮短
+        // 前綴，找到第一個查得到的檔名；前綴文字保留
+        const seg=tok.split(/[\\/]/).pop();
+        for(let k=0;k<seg.length;k++){
+          const e=lookup(seg.slice(k),dir,true);
+          if(e) return seg.slice(0,k)+mark(e);
+        }
+        return m;
+      });
+      for(const idx of refs){
+        const e=entries[idx];
+        if(!e.done){
+          setMsg(`《${name}》處理圖片：${e.fn}`);
+          try{
+            const data=await encodeFolderImage(e.file);
+            const ref=data?await storeImage(data):null;
+            e.tag = ref ? `[IMG:ref:${ref}]` : (data?`[IMG:${data}]`:''); // 外存失敗才退回內嵌
+          }catch(err){ e.tag=''; }
+          e.done=true;
+          await folderTick();
+        }
+      }
+      text=text.replace(/\u0001(\d+)\u0002/g,(m,idx)=>{
+        const e=entries[+idx];
+        if(e && e.tag){ imgInserted++; return `\n${e.tag}\n`; }
+        return `[圖片載入失敗：${e?e.fn:''}]`;
+      });
+    }
+    const ch={id:genId('ch'), title, content:text, origin:'', origContent:'', origOrigin:''};
+    if(/(^|\/)[^\/]*(番外|外傳|外传|特別篇|特别篇|特典|extra)[^\/]*(\/|$)/i.test(dir)) ch.isExtra=true;
+    chapters.push(ch);
+    await folderTick();
+  }
+
+  let finalName=name, k=2;
+  while(novels.some(n=>n.name===finalName)) finalName=`${name} (${k++})`;
+  novels.push({id:genId('nv'), name:finalName, author:'', color:COVER_COLORS[Math.floor(Math.random()*COVER_COLORS.length)],
+    coverImg, chapters, bookmarks:[], scrollPct:0, converted:false, lastRead:null, tags:[]});
+  return {ok:true, name:finalName, chapters:chapters.length, imgInserted, unused:entries.filter(e=>!e.used&&e!==coverEntry).length, hasCover:!!coverImg};
+}
+
+async function importFolderGroups(groups){
+  const overlay=document.getElementById('batchOverlay'), bar=document.getElementById('batchBar'), msg=document.getElementById('batchMsg');
+  overlay.style.display='flex'; bar.style.width='0%';
+  const results=[];
+  try{
+    for(let gi=0;gi<groups.length;gi++){
+      bar.style.width=(gi/groups.length*100)+'%';
+      const g=groups[gi];
+      results.push(await importFolderAsNovel(g.name, g.items, t=>{ msg.textContent=t; }));
+    }
+  }catch(err){
+    console.error(err);
+    overlay.style.display='none';
+    showToast('❌ 匯入資料夾失敗：'+err.message,6000);
+    return;
+  }
+  bar.style.width='100%';
+  persist();
+  if(results.some(r=>r.ok)) triggerCloudSyncAfterEdit();
+  overlay.style.display='none';
+  renderShelf();
+  const ok=results.filter(r=>r.ok), bad=results.filter(r=>!r.ok);
+  const parts=ok.map(r=>`「${r.name}」${r.chapters} 章、插入 ${r.imgInserted} 張圖`+(r.unused?`（另有 ${r.unused} 張圖片文章裡沒寫到）`:''));
+  if(ok.length) showToast('📚 已匯入：'+parts.join('；'),7000);
+  if(bad.length) setTimeout(()=>showToast('⚠️ 略過：'+bad.map(r=>`「${r.name}」${r.reason}`).join('；'),6000), ok.length?1500:0);
+}
+
+async function folderWalkEntry(entry, prefix, out){
+  if(entry.isFile){
+    const file=await new Promise((res,rej)=>entry.file(res,rej));
+    out.push({file, path:prefix+entry.name});
+    if(out.length%50===0) await folderTick();
+  } else if(entry.isDirectory){
+    const reader=entry.createReader(); const all=[];
+    while(true){ // readEntries 一次只回傳一批，要一直讀到空為止
+      const batch=await new Promise((res,rej)=>reader.readEntries(res,rej));
+      if(!batch.length) break; all.push(...batch);
+    }
+    for(const e of all) await folderWalkEntry(e, prefix+entry.name+'/', out);
+  }
+}
+async function importDroppedFolders(dirEntries){
+  const groups=[];
+  for(const d of dirEntries){
+    const out=[];
+    const reader=d.createReader(); const all=[];
+    while(true){
+      const batch=await new Promise((res,rej)=>reader.readEntries(res,rej));
+      if(!batch.length) break; all.push(...batch);
+    }
+    for(const e of all) await folderWalkEntry(e,'',out);
+    groups.push({name:d.name, items:out});
+  }
+  await importFolderGroups(groups);
+}
+
+(function initFolderImport(){
+  const hint=document.getElementById('folderDropHint');
+  const isShelf=()=>document.getElementById('viewShelf').classList.contains('active');
+  const hasFiles=e=>e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
+  let depth=0;
+  window.addEventListener('dragenter',e=>{ if(!isShelf()||!hasFiles(e)) return; depth++; hint.style.display='flex'; });
+  window.addEventListener('dragleave',e=>{ if(!isShelf()) return; depth=Math.max(0,depth-1); if(!depth) hint.style.display='none'; });
+  window.addEventListener('dragover',e=>{ if(!isShelf()||!hasFiles(e)) return; e.preventDefault(); });
+  window.addEventListener('drop',e=>{
+    depth=0; hint.style.display='none';
+    if(!isShelf()||!hasFiles(e)) return;
+    e.preventDefault();
+    // webkitGetAsEntry 必須在事件處理當下同步呼叫，等 await 之後就失效了
+    const entries=Array.from(e.dataTransfer.items||[]).map(it=>it.webkitGetAsEntry&&it.webkitGetAsEntry()).filter(Boolean);
+    const dirs=entries.filter(x=>x.isDirectory);
+    if(!dirs.length){ showToast('請拖曳「資料夾」進來（資料夾裡放文章 .txt 跟圖片）'); return; }
+    importDroppedFolders(dirs);
+  });
+  // 「📁 匯入資料夾」按鈕（點選資料夾的方式）
+  const inp=document.getElementById('folderInput');
+  if(inp) inp.addEventListener('change',()=>{
+    const files=Array.from(inp.files||[]); inp.value='';
+    if(!files.length) return;
+    const map=new Map();
+    files.forEach(f=>{
+      const rel=f.webkitRelativePath||f.name; const i=rel.indexOf('/');
+      if(i<0) return;
+      const top=rel.slice(0,i), path=rel.slice(i+1);
+      if(!map.has(top)) map.set(top,[]);
+      map.get(top).push({file:f, path});
+    });
+    if(!map.size){ showToast('沒有讀到資料夾內容，這個瀏覽器可能不支援選資料夾'); return; }
+    importFolderGroups([...map].map(([name,items])=>({name,items})));
+  });
+})();
 
 // ══ Novel tags ══
 const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
@@ -3976,9 +4384,27 @@ function initEditSwatches(){
 // scrollPct, bookmarks, lastRead, lastOpenedAt) — the whole point is that
 // whoever imports this starts with their own fresh progress, completely
 // independent of the exporter's, even if they end up on the same account.
-function exportNovel(idx){
+// 匯出檔要能單獨攜帶，所以內文裡的外存圖片參照要先換回真正的圖片資料
+async function inlineRefsForExport(text){
+  const t=text||'';
+  if(t.indexOf('[IMG:ref:')<0) return t;
+  const ids=[...new Set([...t.matchAll(/\[IMG:ref:([^\]]+)\]/g)].map(m=>m[1]))];
+  const map={};
+  for(const id of ids){ const d=await loadImageData(id); if(d) map[id]=d; }
+  return t.replace(/\[IMG:ref:([^\]]+)\]/g,(m,id)=>map[id]?`[IMG:${map[id]}]`:'');
+}
+async function exportNovel(idx){
   const n=novels[idx];
   if(!n){ showToast("找不到這本小說"); return; }
+  showToast("準備匯出檔案...");
+  const exportedChapters=[];
+  for(const c of (n.chapters||[])){
+    exportedChapters.push({
+      title:c.title||'', content:await inlineRefsForExport(c.content),
+      origin:c.origin||'', origContent:await inlineRefsForExport(c.origContent), origOrigin:c.origOrigin||'',
+      highlights:c.highlights||[], isExtra:c.isExtra,
+    });
+  }
   const payload={
     type:'novel-reader-export',
     version:1,
@@ -3990,11 +4416,7 @@ function exportNovel(idx){
       tags:n.tags||[],
       shelfBucket:n.shelfBucket||'',
       extraManualOrder:!!n.extraManualOrder,
-      chapters:(n.chapters||[]).map(c=>({
-        title:c.title||'', content:c.content||'',
-        origin:c.origin||'', origContent:c.origContent||'', origOrigin:c.origOrigin||'',
-        highlights:c.highlights||[], isExtra:c.isExtra,
-      })),
+      chapters:exportedChapters,
     },
   };
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
@@ -4036,6 +4458,7 @@ function importNovelFile(inputEl){
       novels.push(newNovel);
       persist();
       renderShelf();
+      setTimeout(()=>migrateInlineImagesToStore(true), 500); // 匯入檔裡的內嵌圖片搬到外存
       showToast('✅ 已匯入「'+newNovel.name+'」（'+newNovel.chapters.length+' 章）');
       const missing=findMissingChapterNumbers(newNovel);
       if(missing.leading.length||missing.internal.length) setTimeout(()=>showToast(missingChaptersMessage(missing),6000),2400);
@@ -5010,10 +5433,37 @@ function saveReadTimeSyncedSnapshot(d){
   try{ localStorage.setItem('nr3_readtime_synced', JSON.stringify(d)); }catch(e){}
 }
 
+// ══ Firestore 額度保護 ══
+// 免費方案每天有寫入（約 2 萬次）／讀取（約 5 萬次）的上限，超過會回「Quota exceeded」，
+// 要等太平洋時間午夜（台灣約下午 3～4 點）才會重置。超過之後再硬試只會一直失敗、
+// 而且自動同步每 3 分鐘就重試一次、白白浪費，所以偵測到就暫停同步到重置時間。
+function isQuotaError(e){ return /quota|RESOURCE_EXHAUSTED|resource.?exhausted/i.test((e&&e.message)||String(e||'')); }
+function nextPacificMidnightMs(){
+  const now=new Date();
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',hour12:false,hour:'numeric',minute:'numeric',second:'numeric'}).formatToParts(now);
+  const g=t=>parseInt(parts.find(p=>p.type===t).value,10);
+  const sinceMidnight=(((g('hour')%24)*60+g('minute'))*60+g('second'))*1000;
+  return now.getTime()+(86400000-sinceMidnight);
+}
+// 已經確認傳到雲端的內嵌圖片（key = 小說id/章節id/圖片id）。圖片的 id 是內容雜湊，
+// 內容一樣 id 就一樣，所以章節文字改了、圖片沒變的話，圖片不用再重傳（省寫入額度）。
+async function loadUploadedImgSet(){ const a=await idbGet('imgUploaded'); return new Set(Array.isArray(a)?a:[]); }
+async function saveUploadedImgSet(set){ await idbSet('imgUploaded',[...set]); }
+let lastCloudVerifyAt=0;
+
 async function fbBackup(auto){
-  if(!fbUser || !fsProjectId){ if(!auto) showToast('請先輸入密碼連線'); return; }
+  if(!fbUser || !fsProjectId){ if(!auto) showToast('請先輸入密碼連線'); return false; }
+  const qUntil=+localStorage.getItem('nr3_quota_until')||0;
+  if(Date.now()<qUntil){
+    if(!auto) showToast('⏸ Firestore 今日免費額度已用完，預計 '+new Date(qUntil).toLocaleString('zh-TW')+' 後恢復，期間先不同步',6000);
+    return false;
+  }
   const uid = fbUser.uid;
   const syncMeta = loadSyncMeta();
+  // 失敗（例如額度用完）時，要把「已經成功傳上去的部分」記下來，下次從中斷的地方繼續，
+  // 不要整批從頭再傳一次（那會把剩下的額度又燒光）
+  let partialCtx=null; const okChapters=new Set(), okMeta=new Set(), okCover=new Set();
+  const uploadedImgs=await loadUploadedImgSet();
 
   const overlay = document.getElementById('batchOverlay');
   const bar     = document.getElementById('batchBar');
@@ -5046,6 +5496,7 @@ async function fbBackup(auto){
     const oldNovelsMap = syncMeta.novels || {};
     const tasks = [];
     const newNovelMeta = {};
+    partialCtx = {newNovelMeta, oldNovelsMap};
 
     // 雲端刪除小說「只」處理使用者明確按過『刪除書籍』、記錄在這份清單裡的
     // id——絕對不會用「本機陣列裡剛好找不到這個 id」去推測使用者要刪除。
@@ -5123,6 +5574,45 @@ async function fbBackup(auto){
     const missingFromRemote = localNovelIds.filter(id=>!remoteNovelIds.includes(id));
     const novelIdsNeedRepair = missingFromRemote.length>0;
 
+    // 3.5 對照雲端實際狀態（不只相信本機的「上次同步紀錄」）
+    // 上面的比對是拿本機記的「上次同步時的雜湊值」來判斷有沒有變動，等於是
+    // 「我相信我上次有傳成功」。但只要雲端實際內容跟那份紀錄對不上（上傳中途
+    // 被打斷、雲端文件被別的裝置或後台動過、還原後的紀錄跟雲端不一致…），
+    // 就會出現「顯示已是最新，雲端卻比本機少」。這裡直接去問雲端：
+    //  - 每本小說讀一次雲端的 meta（章節清單＋每章雜湊），本機有、雲端沒列或
+    //    雜湊不同的章節就補傳；雲端完全沒有這本書就整本補傳。
+    //  - 手動同步時再多做一步：列出雲端實際有哪些章節文件，文件不見的也補傳。
+    const verifyFixed = new Set();
+    const pushChapterTask = (nId, cId)=>{
+      if(!tasks.some(t=>t.type==='chapter' && t.novelId===nId && t.chapId===cId)) tasks.push({type:'chapter', novelId:nId, chapId:cId});
+      verifyFixed.add(nId+'::'+cId);
+    };
+    const needMetaTask = (nId)=>{ if(!tasks.some(t=>t.type==='novelMeta' && t.id===nId)) tasks.push({type:'novelMeta', id:nId}); };
+    if(!auto || (tasks.length===0 && Date.now()-lastCloudVerifyAt>30*60*1000)){
+      lastCloudVerifyAt=Date.now();
+      if(!auto) msg.textContent='對照雲端內容...';
+      for(const n of novels){
+        let remoteN=null;
+        try{ const d=await fsRestGet(`users/${uid}/novels/n_${n.id}`); remoteN=d?fromFsDoc(d):null; }
+        catch(e){ continue; } // 讀不到就略過這本，不影響其他
+        if(!remoteN){
+          n.chapters.forEach(c=>pushChapterTask(n.id,c.id));
+          needMetaTask(n.id);
+          if(n.coverImg && !tasks.some(t=>t.type==='coverImg'&&t.id===n.id)) tasks.push({type:'coverImg', id:n.id});
+          continue;
+        }
+        const rOrder=new Set(Array.isArray(remoteN.chapterOrder)?remoteN.chapterOrder:[]);
+        const rHashes=remoteN.chapterHashes||{};
+        n.chapters.forEach(c=>{
+          const h=chapterHash(c);
+          if(!rOrder.has(c.id) || rHashes[c.id]!==h){
+            pushChapterTask(n.id,c.id);
+            needMetaTask(n.id);
+          }
+        });
+      }
+    }
+
     if(tasks.length===0 && !readTimeChanged && !novelIdsNeedRepair){
       // 就算完全沒東西要「推」上去，雲端的閱讀時間仍可能因為其他裝置而更新過，順手拉回本地
       if(JSON.stringify(mergedReadTime)!==JSON.stringify(localReadTimeRaw)){
@@ -5132,8 +5622,8 @@ async function fbBackup(auto){
       }
       if(!auto) overlay.style.display='none';
       setFbStatus('✅ 已是最新，沒有變更（' + new Date().toLocaleString('zh-TW') + '）');
-      if(!auto) showToast('☁ 沒有變更，已經是最新');
-      return;
+      if(!auto) showToast('☁ 沒有變更，已經是最新（已對照雲端內容確認）');
+      return true;
     }
 
     // 2. 只上傳/刪除真正變動的部分（最多同時 6 筆並行，加快大量章節時的速度）
@@ -5207,12 +5697,15 @@ async function fbBackup(auto){
           chapterHashes:mergedChapterHashes,
           coverHash: n.coverImg ? hashStr(n.coverImg) : null,
         });
+        okMeta.add(t.id);
       } else if(t.type==='coverImg'){
         const n=novels.find(x=>x.id===t.id);
         try{
           if(n.coverImg) await fsRestSet(`users/${uid}/novels/n_${t.id}/cover/img`, {data:n.coverImg});
           else await fsRestDelete(`users/${uid}/novels/n_${t.id}/cover/img`);
+          okCover.add(t.id);
         }catch(err){
+          if(isQuotaError(err)) throw err;
           // 圖片太大（Firestore 單一文件上限 1MiB）等問題，只讓這張封面失敗，
           // 不要拋出去把整個 pMap／整批同步一起搞失敗。把 coverHash 退回舊值，
           // 這樣下次同步還會再試一次，不會因為雜湊值已經算成新的而被誤判成
@@ -5223,14 +5716,21 @@ async function fbBackup(auto){
         }
       } else if(t.type==='chapter'){
         const n=novels.find(x=>x.id===t.novelId), c=n.chapters.find(x=>x.id===t.chapId);
-        const {text:contentPlaceholders, images}=extractInlineImages(c.content||'');
+        const {text:contentPlaceholders, images}=await collectChapterImages(c.content||'');
 
         // 內嵌圖片各自獨立上傳，互相隔離——單一張圖太大失敗，只有那張圖
         // 沒同步到，不會拖累同一章其他圖片、也不會拖累章節文字本身。
         await pMap(images, async (img)=>{
+          const imgKey=`${t.novelId}/${t.chapId}/${img.id}`;
+          if(uploadedImgs.has(imgKey)) return; // 之前已確認傳過，內容相同就不重傳
+          const imgPath=`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images/${img.id}`;
           try{
-            await fsRestSet(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images/${img.id}`, {data:img.data});
+            let exists=false;
+            try{ exists=!!(await fsRestGet(imgPath)); }catch(e2){ if(isQuotaError(e2)) throw e2; }
+            if(!exists) await fsRestSet(imgPath, {data:img.data});
+            uploadedImgs.add(imgKey);
           }catch(err){
+            if(isQuotaError(err)) throw err; // 額度用完要中止整個同步，不是只略過這張圖
             console.error('章節內嵌圖片同步失敗，已略過（不影響其他資料）：', err);
             inlineImgSyncFailed.push(c.title||'未命名章節');
           }
@@ -5244,6 +5744,7 @@ async function fbBackup(auto){
           id: c.id, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
           highlights: c.highlights||[], isExtra: c.isExtra,
         });
+        okChapters.add(t.novelId+'::'+t.chapId);
       } else if(t.type==='deleteChapter'){
         await deleteCol(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}/images`).catch(()=>{});
         await fsRestDelete(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`);
@@ -5282,11 +5783,12 @@ async function fbBackup(auto){
     renderReadingStats();
 
     saveSyncMeta({novels:newNovelMeta});
+    await saveUploadedImgSet(uploadedImgs);
     localStorage.setItem('nr3_deleted_novels', JSON.stringify(stillPendingDelete));
     localStorage.setItem('nr3_deleted_chapters', JSON.stringify(stillPendingChapterDelete));
 
     const ts = new Date().toLocaleString('zh-TW');
-    const summary = tasks.length>0 ? `更新 ${tasks.length} 項` : (novelIdsNeedRepair ? `修復 ${missingFromRemote.length} 本小說的雲端清單` : '更新閱讀時間');
+    const summary = tasks.length>0 ? `更新 ${tasks.length} 項`+(verifyFixed.size?`，其中 ${verifyFixed.size} 章是雲端缺漏而補傳`:'') : (novelIdsNeedRepair ? `修復 ${missingFromRemote.length} 本小說的雲端清單` : '更新閱讀時間');
     if(!auto){
       bar.style.width = '100%';
       msg.textContent = '同步完成！' + ts;
@@ -5305,10 +5807,34 @@ async function fbBackup(auto){
     // auto=true (background auto-sync) stays silent — no toast — status is
     // still recorded via setFbStatus below for anyone who opens Settings.
     setFbStatus('✅ 同步成功！' + ts);
+    return true;
   } catch(e){
     if(!auto) overlay.style.display = 'none';
-    setFbStatus('同步失敗：' + e.message, true);
     console.error(e);
+    // 先把已經成功的部分記下來，下次接著做
+    try{
+      if(partialCtx){
+        const nm=partialCtx.newNovelMeta, om=partialCtx.oldNovelsMap, merged={...om};
+        Object.keys(nm).forEach(nid=>{
+          const base=om[nid]||{metaHash:null, chapters:{}, coverHash:null};
+          const m={metaHash: okMeta.has(nid)?nm[nid].metaHash:base.metaHash, chapters:{...base.chapters}, coverHash: okCover.has(nid)?nm[nid].coverHash:base.coverHash};
+          okChapters.forEach(key=>{ const [a,b]=key.split('::'); if(a===nid && nm[nid].chapters[b]!==undefined) m.chapters[b]=nm[nid].chapters[b]; });
+          merged[nid]=m;
+        });
+        saveSyncMeta({novels:merged});
+      }
+      await saveUploadedImgSet(uploadedImgs);
+    }catch(e3){ console.warn('保存同步進度失敗', e3); }
+    if(isQuotaError(e)){
+      const until=nextPacificMidnightMs();
+      localStorage.setItem('nr3_quota_until', String(until));
+      const when=new Date(until).toLocaleString('zh-TW');
+      setFbStatus('同步暫停：Firestore 今日免費額度已用完（Quota exceeded），預計 '+when+' 後恢復。已傳成功的部分會保留，恢復後從中斷處繼續。', true);
+      if(!auto) showToast('⏸ 今日雲端額度已用完，已暫停同步，預計 '+when+' 後恢復（已完成的部分會保留）',7000);
+    } else {
+      setFbStatus('同步失敗：' + e.message, true);
+    }
+    return false;
   }
 }
 
@@ -5544,16 +6070,19 @@ async function _doRestore(){
         // 標記被拿掉，不會讓整個章節還原失敗。
         const refIds = [...finalContent.matchAll(/\[IMG:ref:([^\]]+)\]/g)].map(m=>m[1]);
         if(refIds.length){
-          const imageMap = {};
+          const okIds = new Set();
           await pMap([...new Set(refIds)], async (imgId)=>{
             try{
+              if(await loadImageData(imgId)){ okIds.add(imgId); return; } // 本機已有這張，不用再下載
               const imgDoc = await fsRestGet(`${path}/images/${imgId}`);
-              if(imgDoc) imageMap[imgId] = fromFsDoc(imgDoc).data || null;
+              const data = imgDoc ? (fromFsDoc(imgDoc).data || null) : null;
+              if(data && await idbSet('img:'+imgId, data)){ imgCacheSet(imgId,data); okIds.add(imgId); }
             }catch(err){
               console.error('內嵌圖片下載失敗，該張圖片將不會顯示：', err);
             }
           }, 3);
-          finalContent = reinsertInlineImages(finalContent, imageMap);
+          // 圖片存進本機外存，內文保留參照；抓不到的標記拿掉
+          finalContent = finalContent.replace(/\[IMG:ref:([^\]]+)\]/g,(mm,id)=>okIds.has(id)?mm:'');
         }
 
         chaptersByNovel[ni][ci] = {
@@ -6052,20 +6581,27 @@ function toggleBookmark(){
   if(existing>=0){
     // Remove bookmark
     n.bookmarks.splice(existing,1);
-    persist();
-    updateBookmarkBtn();
+    persist();triggerCloudSyncAfterEdit();
+    updateBookmarkBtn();refreshBookmarkViews();
     showToast('書籤已移除');
   } else {
     // Add bookmark for this chapter
     const c=n.chapters[activeChapter];
+    // 用「現在畫面實際捲到的位置」當書籤位置，並記下那附近的一小段文字
+    const pl=document.getElementById('paneLeft');
+    const range=pl?pl.scrollHeight-pl.clientHeight:0;
+    const pct=range>0?Math.min(1,Math.max(0,pl.scrollTop/range)):0;
+    const text=c?.content||'';
+    const snip=text.substring(Math.round(pct*text.length),Math.round(pct*text.length)+60).replace(/\n/g,' ');
     n.bookmarks.push({
       chapIdx:    activeChapter,
       chapTitle:  c?.title||('第'+(activeChapter+1)+'章'),
-      scrollPct:  c?.scrollPct||0,
+      pct, snip,
+      scrollPct:  pct,
       createdAt:  Date.now()
     });
-    persist();
-    updateBookmarkBtn();
+    persist();triggerCloudSyncAfterEdit();
+    updateBookmarkBtn();refreshBookmarkViews();
     showToast('🔖 書籤已加入');
   }
 }
@@ -6147,6 +6683,8 @@ function applyHlNote(chapIdx, hlId, text){
   triggerCloudSyncAfterEdit();
   renderTocViewTabs();
   if(tocView==='notes') renderNotesList();
+  const dv=document.getElementById("viewDetail");
+  if(dv&&dv.classList.contains("active")) renderDetailChapList();
 }
 function saveHlNote(){
   if(!hlNoteTarget) return;
@@ -6169,7 +6707,7 @@ function editHlNote(){
 }
 
 // ── 目錄頁的留言區 ──
-let tocView = 'chapters'; // 'chapters' | 'notes'
+let tocView = 'chapters'; // 'chapters' | 'bookmarks' | 'notes'
 function collectNotes(n){
   const out=[];
   getSortedChapterIndices(n).forEach(i=>{
@@ -6183,7 +6721,8 @@ function renderTocViewTabs(){
   const n=novels[activeNovel]; if(!n){ el.innerHTML=''; return; }
   const cnt=collectNotes(n).length;
   el.innerHTML='';
-  [['chapters','章節'],['notes','💬 留言'+(cnt?` (${cnt})`:'')]].forEach(([k,label])=>{
+  const bcnt=(n.bookmarks||[]).length;
+  [['chapters','章節'],['bookmarks','🔖 書籤'+(bcnt?` (${bcnt})`:'')],['notes','💬 留言'+(cnt?` (${cnt})`:'')]].forEach(([k,label])=>{
     const b=document.createElement('button');
     b.type='button';
     b.className='theme-btn'+(tocView===k?' active':'');
@@ -6192,8 +6731,8 @@ function renderTocViewTabs(){
     el.appendChild(b);
   });
 }
-function renderNotesList(){
-  const list=document.getElementById('tocItems');
+function renderNotesList(target, ctx){
+  const list=target||document.getElementById('tocItems');
   const n=novels[activeNovel]; if(!n||!list) return;
   list.innerHTML='';
   const notes=collectNotes(n);
@@ -6227,6 +6766,44 @@ function renderNotesList(){
     list.appendChild(item);
   });
 }
+// ── 目錄頁的書籤區 ──
+function renderBookmarksList(target, ctx){
+  const list=target||document.getElementById('tocItems');
+  const n=novels[activeNovel]; if(!n||!list) return;
+  list.innerHTML='';
+  if(ctx!=='detail'){ // 加書籤要在閱讀中才有「目前位置」，目錄頁不放這個按鈕
+    const add=document.createElement('div'); add.style.cssText='padding:4px 10px 10px';
+    const ab=document.createElement('button'); ab.className='btn-g btn-sm'; ab.style.width='100%';
+    ab.textContent='＋ 在目前閱讀位置加書籤';
+    ab.onclick=()=>{ if(activeChapter<0||!n.chapters[activeChapter]){ showToast('請先打開一個章節'); return; } addBookmark(); };
+    add.appendChild(ab); list.appendChild(add);
+  }
+  const bks=n.bookmarks||[];
+  if(!bks.length){
+    const e=document.createElement('div');
+    e.style.cssText='font-size:13px;color:var(--ink-3);padding:20px 16px;text-align:center;line-height:1.7';
+    e.textContent='還沒有書籤。閱讀時點工具列的 🔖，或按上面的按鈕就能加。';
+    list.appendChild(e); return;
+  }
+  bks.forEach((b,i)=>{
+    const item=document.createElement('div'); item.className='note-item';
+    const head=document.createElement('div'); head.className='note-meta'; head.style.marginTop='0';
+    const t=document.createElement('span'); t.style.cssText='font-weight:600;color:var(--ink-2);font-size:12px;word-break:break-word';
+    t.textContent=(n.chapters[b.chapIdx]?.title)||b.chapTitle||('第'+((b.chapIdx||0)+1)+'章');
+    const pc=document.createElement('span'); pc.style.cssText='color:var(--gold);font-weight:700'; pc.textContent=Math.round(bkPct(b)*100)+'%';
+    head.appendChild(t); head.appendChild(pc);
+    item.appendChild(head);
+    if(b.snip){ const q=document.createElement('div'); q.className='note-quote'; q.style.marginTop='6px'; q.textContent=b.snip+'…'; item.appendChild(q); }
+    const meta=document.createElement('div'); meta.className='note-meta';
+    const d=document.createElement('span'); d.textContent=b.createdAt?new Date(b.createdAt).toLocaleDateString('zh-TW'):'';
+    const db=document.createElement('button'); db.className='btn-ghost btn-sm'; db.textContent='🗑'; db.style.padding='2px 8px';
+    db.onclick=e=>{ e.stopPropagation(); showConfirm('刪除這個書籤？',()=>delBk(i)); };
+    meta.appendChild(d); meta.appendChild(db); item.appendChild(meta);
+    item.onclick=()=>{ closeToc(); jumpBk(i); };
+    list.appendChild(item);
+  });
+}
+
 // 點留言跳到對應章節、對應那一段，並閃一下提示位置
 function jumpToHighlight(chapIdx, hlId){
   if(inlineEditing){ showToast('請先儲存或取消編輯再跳轉'); return; }
@@ -6238,7 +6815,9 @@ function jumpToHighlight(chapIdx, hlId){
     mark.classList.add('hl-flash');
     setTimeout(()=>mark.classList.remove('hl-flash'),1900);
   };
-  if(chapIdx!==activeChapter){ loadChapter(chapIdx); setTimeout(go,220); }
+  const inReader=document.getElementById("viewNovel").classList.contains("active");
+  if(!inReader){ startReading(chapIdx); setTimeout(go,380); }
+  else if(chapIdx!==activeChapter){ loadChapter(chapIdx); setTimeout(go,220); }
   else go();
 }
 
@@ -6335,6 +6914,9 @@ async function init(){
   try{renderShelf();}catch(e){console.error("shelf error:",e);}
   try{initFirebase();}catch(e){console.error("firebase init error:",e);}
   try{initBatchUpload();}catch(e){console.error("batch init error:",e);}
+  // 舊資料的內嵌圖片搬到外存：等畫面閒下來再做，不跟首次載入搶資源
+  const _idle=window.requestIdleCallback||(f=>setTimeout(f,1500));
+  setTimeout(()=>_idle(()=>migrateInlineImagesToStore()), 4000);
 }
 // ══ 手機返回鍵 ══
 // 預設行為：在 App 裡按返回鍵會直接離開（回到手機主畫面），因為整個 App 只有
@@ -6401,6 +6983,10 @@ init();
 // 註冊 Service Worker（GitHub Pages 是 https 才會生效；本機直接開檔案會自動略過）
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW 註冊失敗',e)); });
+  // 網頁改成「先秒開舊版、背景檢查新版」，有新版本時通知一下，重新整理就會用新版
+  navigator.serviceWorker.addEventListener('message',e=>{
+    if(e.data && e.data.type==='nr-updated' && typeof showToast==='function') showToast('🔄 有新版本了，重新整理頁面即可更新',9000);
+  });
 }
 </script>
 </body>
