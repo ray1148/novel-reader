@@ -292,7 +292,24 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .rank-edit-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--paper-3)}
 .rank-edit-row input{width:72px;text-align:center}
 .settings-section{display:flex;flex-direction:column;gap:12px}
-body.admin-mode header,body.admin-mode .pgbar-wrap{display:none!important}
+body.mode-admin .front-only{display:none!important}
+.reader-gate{position:fixed;inset:0;z-index:99990;background:var(--paper);display:none;align-items:center;justify-content:center;padding:20px;overflow:auto}
+.gate-card{width:min(420px,100%);display:flex;flex-direction:column;gap:12px}
+.gate-title{font-size:20px;font-weight:700;text-align:center}
+.gate-note{font-size:13px;color:var(--ink-2);line-height:1.75}
+/* 前台（閱讀）看不到的管理功能：加上 admin-only 這個 class 就會在前台隱藏 */
+body.mode-front .admin-only{display:none!important}
+.admin-bar{display:none;gap:6px;padding:8px 14px;border-bottom:1px solid var(--paper-3);background:var(--paper-2);flex-shrink:0;overflow-x:auto;align-items:center}
+.admin-bar button{white-space:nowrap}
+.admin-bar button.active{background:var(--gold);color:#fff;border-color:var(--gold)}
+.admin-badge{background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px;font-weight:700}
+.report-mark{background:rgba(229,57,53,.22);outline:2px solid #e53935;border-radius:2px}
+.report-bar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9000;width:min(580px,calc(100vw - 20px));background:#1a1814;color:#fff;border:1px solid #e53935;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.55;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.report-bar .rb-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.report-card{border:1px solid var(--paper-3);border-radius:var(--radius);background:var(--paper);padding:12px 14px;margin-bottom:10px}
+.report-chip{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;background:rgba(229,57,53,.12);color:var(--red);font-weight:600}
+.report-chip.done{background:rgba(39,174,96,.12);color:var(--green)}
+.report-chip.pos{background:var(--paper-2);color:var(--ink-2);font-weight:400}
 .stale-banner{position:fixed;left:12px;right:12px;bottom:14px;z-index:99997;background:#1a1814;color:#fff;border:1px solid var(--gold);border-radius:12px;padding:12px 14px;display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.35)}
 .settings-title{font-size:13px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.08em;padding-bottom:6px;border-bottom:1px solid var(--paper-3)}
 .setting-row{display:flex;align-items:center;gap:12px;padding:4px 0}
@@ -436,6 +453,35 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
   <button class="hbtn" id="btnSettings" onclick="goSettings()">⚙</button>
 </header>
 <div class="pgbar-wrap"><div class="pgbar-fill" id="pgFill"></div><div class="pgbar-tip" id="pgTip"></div></div>
+<!-- 前台登入／等待核准畫面 -->
+<div class="reader-gate" id="readerGate">
+  <div class="gate-card">
+    <div class="gate-title">📖 小說閱讀助手</div>
+    <div id="gateSetup" style="display:none">
+      <div class="gate-note">這個頁面需要管理者給你的「邀請連結」才能使用。請用邀請連結重新打開一次（只需要一次）。</div>
+    </div>
+    <div id="gateLogin" style="display:none;flex-direction:column;gap:10px">
+      <div class="gate-note">請登入你的帳號。第一次使用時，輸入你想用的 Email 和密碼，會自動建立帳號；建立後需要等管理者核准。</div>
+      <input type="email" id="gateEmail" class="pinput" placeholder="Email" autocomplete="username">
+      <input type="password" id="gatePw" class="pinput" placeholder="密碼（至少 6 個字）" autocomplete="current-password" onkeydown="if(event.key==='Enter')readerLogin()">
+      <button class="btn-g" style="background:var(--gold);color:#fff;border-color:var(--gold);padding:10px" onclick="readerLogin()">登入 / 建立帳號</button>
+    </div>
+    <div id="gatePending" style="display:none;flex-direction:column;gap:10px">
+      <div class="gate-note">⏳ 你的帳號已建立，正在等管理者核准。請把下面這串「識別碼」傳給管理者，核准後按「重新檢查」就能開始閱讀。</div>
+      <div style="display:flex;gap:8px;align-items:center"><code id="gateUid" style="flex:1;word-break:break-all;background:var(--paper-2);padding:8px 10px;border-radius:var(--radius);font-size:12px"></code><button class="btn-g btn-sm" onclick="copyGateUid()">複製</button></div>
+      <div style="display:flex;gap:8px"><button class="btn-g" style="flex:1;padding:10px" onclick="readerEnter()">🔄 重新檢查</button><button class="btn-ghost" style="padding:10px" onclick="readerLogout()">登出</button></div>
+    </div>
+    <div id="gateMsg" style="font-size:12px;color:var(--red);min-height:16px;text-align:center"></div>
+  </div>
+</div>
+<!-- 後台導覽列（只有後台模式才會顯示） -->
+<div class="admin-bar" id="adminBar">
+  <button class="btn-g btn-sm" id="abShelf" onclick="goShelf()">📚 書籍管理</button>
+  <button class="btn-g btn-sm" id="abReports" onclick="goReports()">🚩 問題回報<span class="admin-badge" id="adminBadge" style="display:none"></span></button>
+  <button class="btn-g btn-sm" id="abSystem" onclick="showView('viewAdmin')">⚙ 系統設定</button>
+  <span style="flex:1"></span>
+  <button class="btn-ghost btn-sm" onclick="goFront()" title="前往前台閱讀頁面">📖 前台</button>
+</div>
 
 <!-- ══ BOOKSHELF VIEW ══ -->
 <div class="view active" id="viewShelf">
@@ -444,14 +490,14 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <span>我的書架</span>
       <div style="display:flex;gap:8px">
         <button class="btn-g btn-sm" onclick="goRank()">🏆 排行榜</button>
-        <button class="btn-g btn-sm" onclick="document.getElementById('folderInput').click()" title="選一個資料夾：資料夾名稱＝書名，.txt＝章節，圖片會依文章裡寫的檔名插入">📁 匯入資料夾</button>
+        <button class="btn-g btn-sm admin-only" onclick="document.getElementById('folderInput').click()" title="選一個資料夾：資料夾名稱＝書名，.txt＝章節，圖片會依文章裡寫的檔名插入">📁 匯入資料夾</button>
         <input type="file" id="folderInput" webkitdirectory multiple style="display:none">
         <button class="btn-g btn-sm" onclick="openSearchModal()">🔍 搜尋</button>
-        <label class="btn-g btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
+        <label class="btn-g btn-sm admin-only" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin:0">
           <input type="file" accept=".json" id="importNovelFile" style="display:none" onchange="importNovelFile(this)">
           &#11014; 匯入
         </label>
-        <button class="btn-primary btn-sm" onclick="openAddModal()">＋ 新增小說</button>
+        <button class="btn-primary btn-sm admin-only" onclick="openAddModal()">＋ 新增小說</button>
       </div>
     </div>
     <div id="shelfBucketRow" style="display:none;gap:8px;margin-bottom:10px"></div>
@@ -459,7 +505,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <div class="empty-shelf" id="shelfEmpty" style="display:none">
       <div class="big-icon">📚</div>
       <h2>書架還是空的</h2>
-      <p>點擊右上角「＋ 新增小說」開始建立你的書庫</p>
+      <p id="shelfEmptyHint">點擊右上角「＋ 新增小說」開始建立你的書庫</p>
     </div>
     <div class="empty-shelf" id="shelfFilterEmpty" style="display:none">
       <div class="big-icon">🔖</div>
@@ -480,7 +526,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <div style="display:flex;align-items:center;gap:12px">
       <button class="back-btn" onclick="goShelf()">←</button>
       <span style="font-size:16px;font-weight:600;flex:1">🏆 排行榜</span>
-      <button class="btn-g btn-sm" id="rankEditBtn" onclick="toggleRankEdit()">✏ 編輯名次</button>
+      <button class="btn-g btn-sm admin-only" id="rankEditBtn" onclick="toggleRankEdit()">✏ 編輯名次</button>
     </div>
     <div class="rank-weekbar">
       <button class="btn-g btn-sm" onclick="rankGoWeek(-1)">‹ 上週</button>
@@ -492,12 +538,25 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
   </div>
 </div>
 
+<!-- ══ 問題回報（後台） ══ -->
+<div class="view" id="viewReports">
+  <div class="settings-page">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:16px;font-weight:600;flex:1">🚩 問題回報</span>
+      <button class="btn-g btn-sm" onclick="fetchCloudReports()" title="從雲端讀取其他裝置送出的回報">🔄 從雲端更新</button>
+    </div>
+    <div style="font-size:12px;color:var(--ink-3);line-height:1.7">讀者在前台閱讀時回報的問題會出現在這裡。「跳到位置」會直接打開那一章，並標出回報當下的那段文字。</div>
+    <div id="reportFilterRow" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <div id="reportList"></div>
+  </div>
+</div>
+
 <div class="view" id="viewDetail">
   <div class="detail-page">
     <div class="detail-header">
       <button class="back-btn" onclick="goShelf()">&#8592;</button>
       <span id="detailTitle" style="font-size:15px;font-weight:600;flex:1"></span>
-      <button class="btn-ghost btn-sm" onclick="exportNovel(activeNovel)" title="匯出成檔案，分享給別人時不會動到你的閱讀進度">&#11015; 匯出</button>
+      <button class="btn-ghost btn-sm admin-only" onclick="exportNovel(activeNovel)" title="匯出成檔案，分享給別人時不會動到你的閱讀進度">&#11015; 匯出</button>
     </div>
     <div class="detail-cover-wrap">
       <div class="detail-cover" id="detailCover">
@@ -521,13 +580,13 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <!-- Chapter list -->
     <div class="detail-section-title" id="detailChapTitleBar">
       <span>章節目錄</span>
-      <div style="display:flex;gap:8px" id="detailChapNormalActions">
+      <div style="display:flex;gap:8px" class="admin-only" id="detailChapNormalActions">
         <button class="btn-g btn-sm" onclick="triggerBatchImport('detailBatchFiles')">&#65291; 新增</button>
         <button class="btn-g btn-sm" onclick="pickFolderForNovel()" title="選一個資料夾，裡面的 .txt 會變成新章節，文章寫到圖片檔名的地方會插入圖片（也可以直接把資料夾拖進這個頁面）">&#128193; 資料夾</button>
         <input type="file" accept=".txt,image/*" multiple id="detailBatchFiles" style="display:none">
         <button class="btn-g btn-sm" onclick="toggleBulkDeleteMode()" title="一次選取多個章節刪除">&#128465; 多選</button>
       </div>
-      <div style="display:none;gap:8px;align-items:center;flex-wrap:wrap" id="detailChapBulkActions">
+      <div style="display:none;gap:8px;align-items:center;flex-wrap:wrap" id="detailChapBulkActions" class="admin-only">
         <span id="bulkSelCount" style="font-size:12px;color:var(--ink-3);white-space:nowrap">已選 0 個</span>
         <button class="btn-g btn-sm" onclick="bulkDeleteSelectAllVisible()">全選</button>
         <button class="btn-g btn-sm" id="bulkMoveBtn" onclick="bulkMoveSelected()">📚 移到番外</button>
@@ -551,7 +610,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <div class="novel-subtitle" id="novelSubtitle"></div>
     </div>
     <div id="chapEditControls" style="display:flex;gap:6px">
-      <button class="btn-ghost btn-sm" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>
+      <button class="btn-ghost btn-sm admin-only" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>
     </div>
   </div>
 
@@ -562,8 +621,8 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <div class="toc-top">
         <span class="toc-label">目錄</span>
         <div style="display:flex;gap:6px">
-          <button class="btn-ghost btn-sm" onclick="triggerBatchImport('batchChapFiles')" title="新增章節（批次匯入 .txt 或截圖）">＋</button>
-          <button class="btn-ghost btn-sm" onclick="pickFolderForNovel()" title="從資料夾新增章節">&#128193;</button>
+          <button class="btn-ghost btn-sm admin-only" onclick="triggerBatchImport('batchChapFiles')" title="新增章節（批次匯入 .txt 或截圖）">＋</button>
+          <button class="btn-ghost btn-sm admin-only" onclick="pickFolderForNovel()" title="從資料夾新增章節">&#128193;</button>
           <input type="file" accept=".txt,image/*" multiple id="batchChapFiles" style="display:none">
           <button class="toc-toggle" onclick="toggleToc()">✕</button>
         </div>
@@ -600,10 +659,10 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
         </div>
         <div class="ptabs">
           <div class="ptab active" id="pt-chat" onclick="switchTab('chat')">劇情查詢</div>
-          <div class="ptab" id="pt-unify" onclick="switchTab('unify')">統一名詞</div>
+          <div class="ptab admin-only" id="pt-unify" onclick="switchTab('unify')">統一名詞</div>
           <div class="ptab" id="pt-progress" onclick="switchTab('progress')">閱讀進度</div>
-          <div class="ptab" id="pt-convert" onclick="switchTab('convert')">簡轉繁</div>
-          <div class="ptab" id="pt-dict" onclick="switchTab('dict')">自訂詞典</div>
+          <div class="ptab admin-only" id="pt-convert" onclick="switchTab('convert')">簡轉繁</div>
+          <div class="ptab admin-only" id="pt-dict" onclick="switchTab('dict')">自訂詞典</div>
         </div>
 
         <!-- chat -->
@@ -702,6 +761,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <span class="hl-dot" style="background:#fecdd3" onclick="selHighlight('hl-pink')"></span>
     <span class="hl-dot" style="background:#bfdbfe" onclick="selHighlight('hl-blue')"></span>
     <button class="sel-btn" style="margin-left:4px;border-left:1px solid #eee" onclick="selHighlight('hl-yellow',true)">💬 留言</button>
+    <button class="sel-btn" style="margin-left:4px;border-left:1px solid #eee" onclick="selReport()">🚩 回報</button>
     <button class="sel-btn" style="margin-left:4px;border-left:1px solid #eee;border-right:none" onclick="hideSelMenu()">✕</button>
   </div>
   <!-- Existing highlight edit menu -->
@@ -739,6 +799,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <button class="rb-icon-btn" id="rbToc" onclick="clearTimeout(uiTimer);toggleToc()">&#9776;<span>目錄</span></button>
       <button class="rb-icon-btn" id="rbTheme" onclick="cycleTheme()">&#9790;<span>夜間</span></button>
       <button class="rb-icon-btn" id="rbBkBtn" onclick="clearTimeout(uiTimer);toggleBookmark()">&#128278;<span>書籤</span></button>
+      <button class="rb-icon-btn" onclick="clearTimeout(uiTimer);openReportModal()">&#128681;<span>回報</span></button>
       <button class="rb-icon-btn" onclick="clearTimeout(uiTimer);openSearch()">&#128269;<span>搜尋</span></button>
       <button class="rb-icon-btn" onclick="showFontPanel()">Aa<span>字體</span></button>
       <button class="rb-icon-btn" onclick="clearTimeout(uiTimer);togglePanel()">&#10022;<span>AI</span></button>
@@ -751,11 +812,11 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
 <div class="view" id="viewAdmin">
   <div class="settings-page">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
-      <button class="back-btn" onclick="goFront()" title="回到前台">←</button>
-      <span style="font-size:16px;font-weight:600;flex:1">🔧 後台管理</span>
+      <button class="back-btn" onclick="goShelf()" title="回書籍管理">←</button>
+      <span style="font-size:16px;font-weight:600;flex:1">⚙ 系統設定</span>
       <button class="btn-g btn-sm" onclick="goFront()">📖 回前台</button>
     </div>
-    <div style="font-size:12px;color:var(--ink-3);line-height:1.7">雲端同步、AI 服務、資料管理放在這裡；閱讀用的前台頁面不會出現這些。前台和後台共用同一份書架資料，在後台還原或清除資料後，前台會提示重新整理。</div>
+    <div style="font-size:12px;color:var(--ink-3);line-height:1.7">雲端同步、AI 服務、資料管理放在這裡。後台負責新增上傳、編輯與管理書籍；前台只做閱讀、畫線、留言、排行和問題回報。前台和後台共用同一份書架資料，在後台還原或清除資料後，前台會提示重新整理。</div>
 
     <div class="settings-section">
       <div class="settings-title">☁ 雲端帳號同步</div>
@@ -857,6 +918,28 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       </div>
     </div>
 
+    <div class="settings-section" id="readerAdminSection">
+      <div class="settings-title">👥 讀者管理（朋友帳號）</div>
+      <div style="font-size:12px;color:var(--ink-3);line-height:1.8">
+        讓朋友用「自己的帳號」讀你發布到雲端的書。步驟：<br>
+        ① 按「複製邀請連結」傳給朋友（連結只有雲端設定，不含你的密碼）。<br>
+        ② 朋友打開連結、用自己的 Email 和密碼登入（第一次會自動建立帳號），畫面會顯示他的「識別碼」。<br>
+        ③ 你把識別碼、名字、代表顏色加到下面的清單，再把產生的「安全規則」貼到 Firebase 控制台 → Firestore → 規則 → 發布。
+      </div>
+      <div id="readerOwnerInfo" style="font-size:12px;color:var(--ink-2)"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-g btn-sm" onclick="copyInviteLink()">📋 複製邀請連結</button></div>
+      <div id="readerList"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="rdUid" class="pinput" placeholder="朋友的識別碼" style="flex:2;min-width:160px;font-size:12px">
+        <input id="rdName" class="pinput" placeholder="名字（例：人員1）" style="flex:1;min-width:100px;font-size:13px">
+        <input id="rdColor" type="color" value="#e53935" style="width:44px;height:36px;border:none;background:none;padding:0">
+        <button class="btn-g btn-sm" onclick="addReader()">＋ 加入</button>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-top:6px">Firestore 安全規則（有加入或移除讀者時，都要重新貼一次）</div>
+      <textarea id="rulesText" class="pinput" rows="12" readonly style="font-family:monospace;font-size:11px;line-height:1.5"></textarea>
+      <button class="btn-g btn-sm" onclick="copyRules()" style="align-self:flex-start">📋 複製規則</button>
+    </div>
+
     <div class="settings-section">
       <div class="settings-title">資料管理</div>
       <div style="font-size:13px;color:var(--ink-2)">目前儲存 <strong id="storageNovelCount">0</strong> 本小說，<strong id="storageSize">—</strong></div>
@@ -876,6 +959,15 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
       <button class="back-btn" onclick="goShelf()">←</button>
       <span style="font-size:16px;font-weight:600">設定</span>
+    </div>
+
+    <div class="settings-section front-only" id="readerAccountSection">
+      <div class="settings-title">👤 我的帳號</div>
+      <div style="font-size:13px;line-height:1.7;color:var(--ink-2)" id="readerAccountInfo">尚未登入</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-g btn-sm" onclick="readerRefreshLibrary()">🔄 重新整理書庫</button>
+        <button class="btn-g btn-sm" onclick="readerLogout()">登出</button>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -1001,6 +1093,32 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <button class="btn-danger" onclick="confirmDeleteNovel()" style="margin-right:auto">刪除書籍</button>
       <button class="btn-ghost" onclick="closeModal('editNovelModal')">取消</button>
       <button class="btn-primary" onclick="confirmEditNovel()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 問題回報（前台送出） -->
+<div class="modal-overlay" id="reportModal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head"><h2>🚩 問題回報</h2><button class="btn-ghost btn-sm" onclick="closeModal('reportModal')">✕</button></div>
+    <div class="modal-body">
+      <div id="reportWhere" style="font-size:12px;color:var(--ink-3);line-height:1.6"></div>
+      <div id="reportQuote" class="note-quote" style="-webkit-line-clamp:4;padding:8px 10px;background:var(--paper-2);border-radius:var(--radius);margin:6px 0 10px"></div>
+      <select id="reportCat" class="pinput" style="margin-bottom:8px;font-size:14px">
+        <option>錯字／漏字</option>
+        <option>文字亂碼</option>
+        <option>內容缺漏或重複</option>
+        <option>圖片問題（沒顯示／模糊）</option>
+        <option>排版問題</option>
+        <option>章節順序／標題</option>
+        <option>其他</option>
+      </select>
+      <textarea id="reportDesc" class="pinput" rows="4" placeholder="簡單描述問題（可以留空）…" style="resize:vertical;font-size:14px;line-height:1.6"></textarea>
+      <div style="font-size:11px;color:var(--ink-3);margin-top:6px">送出時會一併記下你現在讀到的章節和位置，管理者可以直接跳到那裡查看。</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn-g btn-sm" onclick="closeModal('reportModal')">取消</button>
+        <button class="btn-g btn-sm" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="submitReport()">送出回報</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1183,6 +1301,28 @@ function s2t(text){
 // （IndexedDB／localStorage），所以改完回前台就會看到。
 // GitHub Pages 也能用「/admin」（不寫 .html）開到 admin.html，所以兩種寫法都要認
 const APP_MODE = /(^|\/)admin(\.html)?\/?$/i.test(location.pathname) ? 'admin' : 'front';
+document.body.classList.add('mode-'+APP_MODE); // 前台隱藏 .admin-only 的管理功能（見 CSS）
+// 前台只能閱讀／畫線／留言／排行／回報；新增上傳、編輯、刪除這些寫資料的管理功能只在後台。
+// 畫面上的按鈕已經在前台隱藏，這裡再多擋一層，萬一從別的路徑呼叫到也不會執行。
+function adminOnly(){
+  if(APP_MODE==='admin') return true;
+  if(typeof showToast==='function') showToast('這個功能只在後台提供');
+  return false;
+}
+// 邀請連結：管理者在後台按「複製邀請連結」，格式是 前台網址#invite=<base64>，裡面只有
+// Firebase 設定（本來就是公開的）和管理者的識別碼，沒有任何密碼。朋友打開後存起來，之後不用再帶著連結。
+(function consumeInvite(){
+  if(APP_MODE!=='front') return;
+  const m=location.hash.match(/invite=([^&]+)/); if(!m) return;
+  try{
+    const o=JSON.parse(atob(decodeURIComponent(m[1])));
+    if(o.apiKey && o.projectId && o.ownerUid){
+      localStorage.setItem('nr3_fbconfig', JSON.stringify({apiKey:o.apiKey, projectId:o.projectId}));
+      localStorage.setItem('nr3_owner_uid', o.ownerUid);
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  }catch(e){ console.warn('邀請連結格式不正確', e); }
+})();
 // 前台記下自己的網址路徑，後台的「回前台」才知道要回哪個檔案（不一定叫 index.html）
 if(APP_MODE==='front'){ try{ localStorage.setItem('nr3_front_path', location.pathname); }catch(e){} }
 const nrChannel = (typeof BroadcastChannel!=='undefined') ? new BroadcastChannel('nr-sync') : null;
@@ -1197,8 +1337,13 @@ function showStaleBanner(){
   const btn=document.createElement('button'); btn.className='btn-g btn-sm'; btn.textContent='重新整理'; btn.style.cssText='background:var(--gold);color:#fff;border-color:var(--gold)'; btn.onclick=()=>location.reload();
   b.appendChild(btn); document.body.appendChild(b);
 }
+let _frontBcTimer=null, _adminBcTimer=null;
+function nrBroadcastFrontChanged(){ clearTimeout(_frontBcTimer); _frontBcTimer=setTimeout(()=>nrBroadcast('front-changed'),1500); }
+function adminDataChanged(){ if(APP_MODE!=='admin') return; clearTimeout(_adminBcTimer); _adminBcTimer=setTimeout(()=>nrBroadcast('data-changed'),800); }
 if(nrChannel) nrChannel.onmessage=(e)=>{
   const d=e.data||{};
+  // 後台：前台（同一台裝置）有新的回報時，把回報併進來並更新數字
+  if(APP_MODE==='admin' && d.from==='front' && d.type==='front-changed'){ adminMergeReportsFromDB(); return; }
   if(APP_MODE!=='front' || d.from!=='admin') return;
   if(d.type==='data-changed'){ dataStale=true; flushPersistCancel(); showStaleBanner(); }
   if(d.type==='session'){
@@ -1279,6 +1424,8 @@ async function idbDelete(key){
 // 就什麼都不做，等下次登入後手動或自動同步時再一起補上去。
 let editSyncTimer = null;
 function triggerCloudSyncAfterEdit(){
+  if(APP_MODE==='front') return; // 前台不上傳書的內容（讀者自己的資料之後另外存）
+  adminDataChanged(); // 後台有改動資料 → 通知還開著的前台重新整理
   if(!fbUser || !fsProjectId) return;
   clearTimeout(editSyncTimer);
   editSyncTimer = setTimeout(()=>{
@@ -1311,7 +1458,7 @@ function persistNow(){
   persistTimer=null;
   if(dataStale) return; // 後台已更新資料，這個頁面手上是舊的，不要寫回去
   // 寫入 IndexedDB（非同步、容量遠大於 localStorage）
-  idbSet('novels', novels).then(()=>{ if(APP_MODE==='admin') nrBroadcast('data-changed'); }).catch(e=>{
+  idbSet('novels', novels).then(()=>{ if(APP_MODE==='front') nrBroadcastFrontChanged(); }).catch(e=>{
     console.error('IndexedDB 儲存失敗，改用 localStorage 備援', e);
     try{
       localStorage.setItem("nr3",JSON.stringify(novels));
@@ -1553,7 +1700,7 @@ function renderReadingStats(){
 
 // ══ Views ══
 function showView(id){
-  ["viewShelf","viewDetail","viewNovel","viewSettings","viewAdmin","viewRank"].forEach(v=>{
+  ["viewShelf","viewDetail","viewNovel","viewSettings","viewAdmin","viewRank","viewReports"].forEach(v=>{
     document.getElementById(v).classList.toggle("active",v===id);
   });
   const inNovel = id==="viewNovel";
@@ -1566,6 +1713,14 @@ function showView(id){
   document.getElementById("btnAI").style.display = inNovel?"flex":"none";
   document.getElementById("pgFill").style.width="0";
   document.getElementById("pgTip").textContent="";
+  const ab=document.getElementById("adminBar");
+  if(ab) ab.style.display=(APP_MODE==="admin" && !inNovel)?"flex":"none";
+  updateAdminBarActive(id);
+  if(!inNovel) removeReportBar();
+}
+function updateAdminBarActive(id){
+  const map={viewShelf:"abShelf",viewDetail:"abShelf",viewRank:"abShelf",viewReports:"abReports",viewAdmin:"abSystem",viewSettings:"abSystem"};
+  ["abShelf","abReports","abSystem"].forEach(b=>{ const el=document.getElementById(b); if(el) el.classList.toggle("active",map[id]===b); });
 }
 function goShelf(){
   hideReadingUI();
@@ -1652,6 +1807,7 @@ function isNovelIncomplete(n){
   return m.leading.length>0 || m.internal.length>0;
 }
 function setNovelBucket(idx,bucket){
+  if(!adminOnly()) return;
   const n=novels[idx]; if(!n) return;
   n.shelfBucket=bucket; // 'incomplete' | 'all' | undefined(自動)
   if(bucket===undefined) delete n.shelfBucket;
@@ -1798,7 +1954,7 @@ function renderShelf(){
 
     // Menu button
     const menuBtn=document.createElement("button");
-    menuBtn.className="card-menu-btn";
+    menuBtn.className="card-menu-btn admin-only";
     menuBtn.title="編輯書籍資訊";
     menuBtn.textContent="⋯";
     menuBtn.addEventListener("click",e=>{e.stopPropagation();openEditNovelModal(i);});
@@ -1839,7 +1995,7 @@ function renderShelf(){
     }
     const moveBtn=document.createElement("button");
     moveBtn.type="button";
-    moveBtn.className="btn-ghost btn-sm";
+    moveBtn.className="btn-ghost btn-sm admin-only";
     moveBtn.style.cssText="margin-top:4px;font-size:11px;padding:2px 8px";
     moveBtn.textContent=shelfBucket==='incomplete'?"↩ 移回全部":"＋ 移到未完成";
     moveBtn.addEventListener("click",e=>{
@@ -2080,12 +2236,12 @@ function renderDetailChapList(){
     actions.className="detail-chap-actions";
     if(!bulkDeleteMode && showMoveBtns){
       const upBtn=document.createElement("button");
-      upBtn.className="btn-g btn-sm";upBtn.textContent="▲";upBtn.style.padding="3px 7px";
+      upBtn.className="btn-g btn-sm admin-only";upBtn.textContent="▲";upBtn.style.padding="3px 7px";
       upBtn.disabled=pos===0;
       upBtn.style.opacity=pos===0?"0.35":"1";
       upBtn.addEventListener("click",e=>{e.stopPropagation();moveSideStoryUp(realIdx);});
       const downBtn=document.createElement("button");
-      downBtn.className="btn-g btn-sm";downBtn.textContent="▼";downBtn.style.padding="3px 7px";
+      downBtn.className="btn-g btn-sm admin-only";downBtn.textContent="▼";downBtn.style.padding="3px 7px";
       downBtn.disabled=pos===shown.length-1;
       downBtn.style.opacity=pos===shown.length-1?"0.35":"1";
       downBtn.addEventListener("click",e=>{e.stopPropagation();moveSideStoryDown(realIdx);});
@@ -2093,7 +2249,7 @@ function renderDetailChapList(){
     }
     if(!bulkDeleteMode){
       const editBtn=document.createElement("button");
-      editBtn.className="btn-g btn-sm";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
+      editBtn.className="btn-g btn-sm admin-only";editBtn.textContent="✏";editBtn.style.padding="3px 8px";
       editBtn.addEventListener("click",e=>{e.stopPropagation();openEditModal(activeNovel,realIdx);});
       actions.appendChild(editBtn);
     }
@@ -2164,6 +2320,7 @@ let bulkDeleteMode = false;
 let bulkDeleteSelected = new Set();
 
 function toggleBulkDeleteMode(){
+  if(!adminOnly()) return;
   bulkDeleteMode = !bulkDeleteMode;
   bulkDeleteSelected.clear();
   renderDetailChapList();
@@ -2192,6 +2349,7 @@ function bulkDeleteSelectAllVisible(){
 // 把勾選的章節在「正篇」跟「番外」之間移動：直接改章節的 isExtra 標記（明確的
 // 布林值會優先於標題關鍵字判斷），書的資料、閱讀進度、書籤都不動。
 function bulkMoveSelected(){
+  if(!adminOnly()) return;
   const n=novels[activeNovel];
   if(!n) return;
   if(!bulkDeleteSelected.size){ showToast('請先勾選要移動的章節'); return; }
@@ -2212,6 +2370,7 @@ function bulkMoveSelected(){
 }
 
 function confirmBulkDelete(){
+  if(!adminOnly()) return;
   const n=novels[activeNovel];
   if(!n || !bulkDeleteSelected.size) return;
   const count = bulkDeleteSelected.size;
@@ -2592,6 +2751,7 @@ function renderToc(){
   // is rarely used, so it's dropped from this shortcut.
   const btnRow=document.createElement("div");
   btnRow.style.cssText="display:flex;gap:8px;margin:10px 14px";
+  btnRow.classList.add("admin-only");
 
   const addBtn=document.createElement("button");
   addBtn.className="toc-add-btn";
@@ -2625,7 +2785,16 @@ function loadChapter(idx){
   n.lastChapter=idx;
   document.getElementById("chapterTitle").textContent=c.title||"第"+(idx+1)+"章";
   document.getElementById("novelSubtitle").textContent=n.name+" · "+(c.title||"第"+(idx+1)+"章");
-  renderContent(document.getElementById("paneContent"), c.content||"");
+  if(c.content==null){
+    // 前台讀者：這一章的內容還沒從雲端抓下來（只有章節目錄），抓好再重新載入這一章
+    document.getElementById("paneContent").innerHTML='<div style="color:var(--ink-3);padding:30px 0;text-align:center">⏳ 載入章節中…</div>';
+    const _ni=activeNovel;
+    ensureChapterLoaded(_ni,idx).then(()=>{ if(activeNovel===_ni && activeChapter===idx) loadChapter(idx); })
+      .catch(err=>showToast('載入章節失敗：'+err.message+'（點目錄再試一次）',6000));
+  } else {
+    registerImageHints(n,c);
+    renderContent(document.getElementById("paneContent"), c.content||"");
+  }
   renderContent(document.getElementById("paneOrigin"), c.origin||"");
   document.getElementById("paneRight").style.display=(splitMode&&c.origin)?"block":"none";
   document.getElementById("twBadge").style.display=n.converted?"inline":"none";
@@ -2657,6 +2826,7 @@ let inlineEditing = false;
 let inlineEditOrigContent = null;
 
 function enterInlineEdit(){
+  if(!adminOnly()) return;
   if(activeNovel<0||activeChapter<0) return;
   const n=novels[activeNovel], c=n?.chapters[activeChapter];
   if(!n||!c) return;
@@ -2771,7 +2941,7 @@ function exitInlineEditUI(){
   if(box){
     const n=novels[activeNovel];
     const hasChap=n&&n.chapters&&n.chapters.length;
-    box.innerHTML=hasChap?'<button class="btn-ghost btn-sm" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>':'';
+    box.innerHTML=hasChap?'<button class="btn-ghost btn-sm admin-only" onclick="enterInlineEdit()" id="btnEditChap">✏ 編輯</button>':'';
   }
   showUIBriefly(); // 編輯結束，恢復平常閱讀模式「幾秒後自動收合工具列」的行為
 }
@@ -3068,6 +3238,7 @@ document.getElementById("btnAI").onclick=togglePanel;
 
 // ══ Panel tabs ══
 function switchTab(t){
+  if(APP_MODE==='front' && ['unify','convert','dict'].includes(t)) return; // 這幾個分頁會改動書的內容，只在後台
   curTab=t;["chat","unify","progress","convert","dict"].forEach(x=>{
     document.getElementById("pt-"+x).classList.toggle("active",x===t);
     document.getElementById("sec-"+x).style.display=x===t?"flex":"none";
@@ -3604,10 +3775,18 @@ async function storeImage(dataUrl){ // 回傳參照 id；儲存失敗回傳 null
   imgCacheSet(id,dataUrl);
   return id;
 }
+const imgCloudHint=new Map(); // 圖片 id → 它所在章節的雲端路徑（前台讀者本機沒有圖時，要去雲端抓）
 async function loadImageData(id){
   if(imgCache.has(id)){ const v=imgCache.get(id); imgCacheSet(id,v); return v; }
   const v=await idbGet('img:'+id);
   if(typeof v==='string' && v){ imgCacheSet(id,v); return v; }
+  if(APP_MODE==='front' && fbUser && imgCloudHint.has(id)){
+    try{
+      const d=await fsRestGet(imgCloudHint.get(id)+'/images/'+id);
+      const data=d?(fromFsDoc(d).data||null):null;
+      if(data){ await idbSet('img:'+id,data); imgCacheSet(id,data); return data; }
+    }catch(e){ console.warn('雲端圖片讀取失敗', e); }
+  }
   return null;
 }
 // 同步到雲端用：章節裡的圖片可能是舊式內嵌、也可能是外存參照，兩種都收集起來
@@ -4203,6 +4382,7 @@ function askOverwrite(dupTitles, newCount){
 }
 
 async function importFolderGroupsIntoNovel(novelIdx, groups){
+  if(!adminOnly()) return;
   const n=novels[novelIdx];
   if(!n){ showToast('找不到這本小說'); return; }
   // 先用檔名比對有哪些章節跟現有章節同名，有的話覆蓋前先問使用者
@@ -4271,6 +4451,7 @@ async function importFolderGroupsIntoNovel(novelIdx, groups){
 }
 
 async function importFolderGroups(groups){
+  if(!adminOnly()) return;
   const overlay=document.getElementById('batchOverlay'), bar=document.getElementById('batchBar'), msg=document.getElementById('batchMsg');
   overlay.style.display='flex'; bar.style.width='0%';
   const results=[];
@@ -4342,6 +4523,7 @@ function groupsFromFolderInput(inp){
 }
 // 在小說的目錄頁／閱讀目錄按「📁 資料夾」：選一個資料夾，章節加進目前這本書
 function pickFolderForNovel(){
+  if(!adminOnly()) return;
   if(activeNovel<0){ showToast('請先開啟一本小說'); return; }
   const inp=document.getElementById('folderInputNovel'); if(inp) inp.click();
 }
@@ -4350,7 +4532,7 @@ function pickFolderForNovel(){
   const hintTitle=document.getElementById('folderDropHintTitle'), hintSub=document.getElementById('folderDropHintSub');
   const active=id=>document.getElementById(id).classList.contains('active');
   // 現在在哪個畫面決定拖進來的資料夾要做什麼：書架＝建立新書；小說目錄頁＝加進這本書
-  const mode=()=> active('viewShelf')?'shelf' : (active('viewDetail')&&activeNovel>=0?'detail':null);
+  const mode=()=> APP_MODE!=='admin' ? null : active('viewShelf')?'shelf' : (active('viewDetail')&&activeNovel>=0?'detail':null);
   const hasFiles=e=>e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
   let depth=0;
   const showHint=m=>{
@@ -4392,6 +4574,533 @@ function pickFolderForNovel(){
     importFolderGroupsIntoNovel(activeNovel, groups);
   });
 })();
+
+
+// ══ 問題回報 ══
+// 讀者在前台閱讀時可以回報問題（錯字、缺漏、圖片…）。回報會記下「當下讀到的章節、位置百分比、
+// 以及那附近的一小段原文（或讀者選取的那句）」，存在這本書的 n.reports 裡，跟著雲端同步；
+// 管理者在後台的「問題回報」可以看到清單，按「跳到位置」就會打開那一章並標出那段文字。
+// 回報不會真的刪除，刪除只是把狀態改成 deleted（這樣跨裝置合併時，刪除的結果也能傳過去）。
+function mergeReports(a,b){
+  const map=new Map();
+  [...(Array.isArray(a)?a:[]), ...(Array.isArray(b)?b:[])].forEach(r=>{
+    if(!r||!r.id) return;
+    const old=map.get(r.id);
+    if(!old || (r.updatedAt||r.createdAt||0) > (old.updatedAt||old.createdAt||0)) map.set(r.id,r);
+  });
+  return [...map.values()].sort((x,y)=>(x.createdAt||0)-(y.createdAt||0));
+}
+// 取得「使用者現在畫面上方」對應到內文第幾個字、以及那附近的文字
+function getViewportAnchor(){
+  const pl=document.getElementById('paneLeft'), pane=document.getElementById('paneContent');
+  if(!pl||!pane) return null;
+  const full=pane.textContent;
+  const rect=pl.getBoundingClientRect();
+  const x=rect.left+Math.min(rect.width/2,300), y=rect.top+Math.min(120,rect.height/3);
+  let node=null, off=0;
+  try{
+    if(document.caretRangeFromPoint){ const r=document.caretRangeFromPoint(x,y); if(r){ node=r.startContainer; off=r.startOffset; } }
+    else if(document.caretPositionFromPoint){ const p=document.caretPositionFromPoint(x,y); if(p){ node=p.offsetNode; off=p.offset; } }
+  }catch(e){}
+  let start;
+  if(node && pane.contains(node)){
+    const pre=document.createRange(); pre.selectNodeContents(pane); pre.setEnd(node,off);
+    start=pre.toString().length;
+  } else {
+    const range=pl.scrollHeight-pl.clientHeight;
+    const pct=range>0?pl.scrollTop/range:0;
+    start=Math.floor(pct*full.length);
+  }
+  return {start, text:full.slice(start,start+80)};
+}
+let reportDraft=null;
+function openReportModal(pre){
+  if(activeNovel<0||activeChapter<0||!novels[activeNovel]?.chapters[activeChapter]){ showToast('請先打開一個章節'); return; }
+  const n=novels[activeNovel], c=n.chapters[activeChapter];
+  const pl=document.getElementById('paneLeft');
+  const range=pl.scrollHeight-pl.clientHeight;
+  const pct=range>0?Math.min(1,Math.max(0,pl.scrollTop/range)):0;
+  const anchor=(pre&&typeof pre.start==='number')?pre:(getViewportAnchor()||{start:null,text:''});
+  reportDraft={chapId:c.id, chapIdx:activeChapter, chapTitle:c.title||'', pct, start:anchor.start, text:(anchor.text||'').slice(0,120), fromSel:!!(pre&&typeof pre.start==='number')};
+  document.getElementById('reportWhere').textContent=`《${n.name||''}》${c.title||('第'+(activeChapter+1)+'章')} · 位置約 ${Math.round(pct*100)}%`;
+  const q=document.getElementById('reportQuote');
+  q.textContent=reportDraft.text?('「'+reportDraft.text.replace(/\s+/g,' ').trim()+'」'):'（會記錄你目前畫面所在的位置）';
+  document.getElementById('reportDesc').value='';
+  document.getElementById('reportCat').selectedIndex=0;
+  openModal('reportModal');
+}
+function selReport(){
+  if(!selRange){ hideSelMenu(); return; }
+  const pane=document.getElementById('paneContent');
+  const pre=document.createRange(); pre.selectNodeContents(pane); pre.setEnd(selRange.startContainer, selRange.startOffset);
+  const raw=selRange.toString(); const lead=raw.length-raw.trimStart().length;
+  const info={start:pre.toString().length+lead, text:(selText||raw).slice(0,120)};
+  hideSelMenu();
+  window.getSelection()?.removeAllRanges();
+  openReportModal(info);
+}
+function submitReport(){
+  if(!reportDraft) return;
+  const n=novels[activeNovel]; if(!n) return;
+  const d=reportDraft;
+  const rep={id:genId('rp'), chapId:d.chapId, chapIdx:d.chapIdx, chapTitle:d.chapTitle, pct:d.pct, start:d.start, text:d.text,
+    cat:document.getElementById('reportCat').value, desc:document.getElementById('reportDesc').value.trim().slice(0,1000),
+    createdAt:Date.now(), updatedAt:Date.now(), status:'open'};
+  if(!Array.isArray(n.reports)) n.reports=[];
+  n.reports.push(rep);
+  persist();
+  triggerCloudSyncAfterEdit();
+  reportDraft=null;
+  closeModal('reportModal');
+  showToast('🚩 已送出回報，謝謝你！');
+}
+
+// ── 後台：回報清單 ──
+let reportFilter='open';
+function openReportsCount(){ let c=0; novels.forEach(n=>(n.reports||[]).forEach(r=>{ if(r.status==='open') c++; })); return c; }
+function updateReportBadge(){
+  const b=document.getElementById('adminBadge'); if(!b) return;
+  const c=openReportsCount();
+  b.style.display=c?'inline-block':'none'; b.textContent=c;
+}
+function goReports(){ showView('viewReports'); renderReports(); }
+async function adminMergeReportsFromDB(){
+  try{
+    const d=await idbGet('novels'); if(!Array.isArray(d)) return;
+    let changed=false;
+    d.forEach(rn=>{
+      const ln=novels.find(n=>n.id===rn.id); if(!ln) return;
+      const merged=mergeReports(ln.reports, rn.reports);
+      if(JSON.stringify(merged)!==JSON.stringify(ln.reports||[])){ ln.reports=merged; changed=true; }
+    });
+    if(changed){
+      updateReportBadge();
+      if(document.getElementById('viewReports').classList.contains('active')) renderReports();
+      showToast('🚩 收到新的問題回報');
+    }
+  }catch(e){ console.warn(e); }
+}
+async function fetchCloudReports(){
+  if(!fbUser || !fsProjectId){ showToast('請先到「系統設定」登入雲端'); return; }
+  showToast('讀取雲端的回報...');
+  let changed=0, errs=0;
+  for(const n of novels){
+    try{
+      const d=await fsRestGet(`users/${fbUser.uid}/novels/n_${n.id}`);
+      if(!d) continue;
+      const rn=fromFsDoc(d);
+      const merged=mergeReports(n.reports, rn.reports);
+      if(JSON.stringify(merged)!==JSON.stringify(n.reports||[])){ n.reports=merged; changed++; }
+    }catch(e){
+      errs++;
+      if(isQuotaError(e)){ showToast('⏸ 今日雲端額度已用完，稍後再試',5000); break; }
+    }
+  }
+  if(changed) persist();
+  updateReportBadge(); renderReports();
+  showToast(changed?`✅ 已更新 ${changed} 本書的回報`:('沒有新的回報'+(errs?`（${errs} 本讀取失敗）`:'')),4000);
+}
+function setReportStatus(ni, rid, status){
+  const n=novels[ni]; const r=(n&&n.reports||[]).find(x=>x.id===rid); if(!r) return;
+  r.status=status; r.updatedAt=Date.now();
+  persist(); triggerCloudSyncAfterEdit();
+  updateReportBadge(); renderReports();
+}
+function renderReports(){
+  const row=document.getElementById('reportFilterRow'), list=document.getElementById('reportList');
+  if(!row||!list) return;
+  const all=[];
+  novels.forEach((n,ni)=>(n.reports||[]).forEach(r=>{ if(r.status!=='deleted') all.push({ni,n,r}); }));
+  const cnt={open:all.filter(x=>x.r.status==='open').length, done:all.filter(x=>x.r.status==='done').length, all:all.length};
+  row.innerHTML='';
+  [['open','未處理'],['done','已處理'],['all','全部']].forEach(([k,label])=>{
+    const b=document.createElement('button'); b.type='button';
+    b.className='theme-btn'+(reportFilter===k?' active':''); b.textContent=`${label} (${cnt[k]})`;
+    b.onclick=()=>{ reportFilter=k; renderReports(); };
+    row.appendChild(b);
+  });
+  list.innerHTML='';
+  const items=all.filter(x=>reportFilter==='all'||x.r.status===reportFilter).sort((a,b)=>(b.r.createdAt||0)-(a.r.createdAt||0));
+  if(!items.length){
+    const e=document.createElement('div');
+    e.style.cssText='text-align:center;color:var(--ink-3);padding:40px 16px;font-size:14px;line-height:1.8';
+    e.textContent=reportFilter==='open'?'目前沒有未處理的回報 🎉':'沒有符合的回報';
+    list.appendChild(e); return;
+  }
+  items.forEach(({ni,n,r})=>{
+    const chap=n.chapters.find(c=>c.id===r.chapId);
+    const card=document.createElement('div'); card.className='report-card';
+    const head=document.createElement('div'); head.style.cssText='display:flex;justify-content:space-between;gap:8px;align-items:flex-start';
+    const title=document.createElement('div'); title.style.cssText='font-size:13px;font-weight:600;word-break:break-word';
+    title.textContent=`《${n.name||''}》${(chap&&chap.title)||r.chapTitle||''}`;
+    const date=document.createElement('div'); date.style.cssText='font-size:11px;color:var(--ink-3);white-space:nowrap';
+    date.textContent=r.createdAt?new Date(r.createdAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    head.appendChild(title); head.appendChild(date); card.appendChild(head);
+    const chips=document.createElement('div'); chips.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin:8px 0';
+    const c1=document.createElement('span'); c1.className='report-chip'; c1.textContent=r.cat||'其他';
+    const c2=document.createElement('span'); c2.className='report-chip pos'; c2.textContent='位置約 '+Math.round((r.pct||0)*100)+'%';
+    const c3=document.createElement('span'); c3.className='report-chip'+(r.status==='done'?' done':''); c3.textContent=r.status==='done'?'已處理':'未處理';
+    chips.appendChild(c1); chips.appendChild(c2); chips.appendChild(c3); card.appendChild(chips);
+    if(r.text){ const q=document.createElement('div'); q.className='note-quote'; q.style.cssText='-webkit-line-clamp:3;margin-bottom:6px'; q.textContent='「'+r.text.replace(/\s+/g,' ').trim()+'」'; card.appendChild(q); }
+    if(r.desc){ const d=document.createElement('div'); d.className='note-text'; d.textContent=r.desc; card.appendChild(d); }
+    const acts=document.createElement('div'); acts.style.cssText='display:flex;gap:8px;margin-top:10px;flex-wrap:wrap';
+    const jump=document.createElement('button'); jump.className='btn-g btn-sm'; jump.textContent=chap?'📍 跳到位置':'（章節已不存在）';
+    jump.disabled=!chap; if(!chap) jump.style.opacity='.5';
+    jump.style.cssText+=';background:var(--gold);color:#fff;border-color:var(--gold)';
+    jump.onclick=()=>jumpToReport(ni,r.id);
+    const st=document.createElement('button'); st.className='btn-g btn-sm';
+    st.textContent=r.status==='done'?'↺ 重新開啟':'✓ 標記已處理';
+    st.onclick=()=>setReportStatus(ni,r.id,r.status==='done'?'open':'done');
+    const del=document.createElement('button'); del.className='btn-ghost btn-sm'; del.textContent='🗑 刪除'; del.style.color='var(--red)';
+    del.onclick=()=>showConfirm('刪除這則回報？',()=>setReportStatus(ni,r.id,'deleted'));
+    acts.appendChild(jump); acts.appendChild(st); acts.appendChild(del); card.appendChild(acts);
+    list.appendChild(card);
+  });
+}
+
+// 把內文裡第 pos 個字起、長度 len 的文字包上 <mark>（跟畫線還原用同一套「字元位置 → 節點」換算）
+function wrapTextRange(el,pos,len,cls){
+  const end=pos+len;
+  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  let node,acc=0,sNode=null,sOff=0,eNode=null,eOff=0;
+  while((node=walker.nextNode())){
+    const l=node.textContent.length;
+    if(!sNode && pos<acc+l){ sNode=node; sOff=pos-acc; }
+    if(sNode && end<=acc+l){ eNode=node; eOff=end-acc; break; }
+    acc+=l;
+  }
+  if(!sNode||!eNode) return null;
+  const range=document.createRange(); range.setStart(sNode,sOff); range.setEnd(eNode,eOff);
+  const mark=document.createElement('mark'); mark.className=cls;
+  try{ range.surroundContents(mark); } catch(e){ mark.appendChild(range.extractContents()); range.insertNode(mark); }
+  return mark;
+}
+function locateReportInPane(rep){
+  const pane=document.getElementById('paneContent'), pl=document.getElementById('paneLeft');
+  if(!pane||!pl) return false;
+  pane.querySelectorAll('mark.report-mark').forEach(m=>{ const p=m.parentNode; while(m.firstChild) p.insertBefore(m.firstChild,m); p.removeChild(m); p.normalize(); });
+  const full=pane.textContent, t=(rep.text||'');
+  let pos=-1;
+  if(t){
+    if(typeof rep.start==='number' && full.substr(rep.start,t.length)===t) pos=rep.start;
+    else pos=full.indexOf(t);
+  }
+  if(pos>=0 && t){
+    const mk=wrapTextRange(pane,pos,t.length,'report-mark');
+    if(mk){ mk.scrollIntoView({block:'center',behavior:'smooth'}); mk.classList.add('hl-flash'); return true; }
+  }
+  const range=pl.scrollHeight-pl.clientHeight;
+  pl.scrollTop=(rep.pct||0)*range;
+  return false;
+}
+function removeReportBar(){ const b=document.getElementById('reportBar'); if(b) b.remove(); }
+function showReportBar(ni,rid){
+  removeReportBar();
+  const n=novels[ni]; const rep=(n&&n.reports||[]).find(r=>r.id===rid); if(!rep) return;
+  const bar=document.createElement('div'); bar.className='report-bar'; bar.id='reportBar';
+  const t=document.createElement('div'); t.style.fontWeight='600'; t.textContent='🚩 '+(rep.cat||'問題回報')+'　'+(rep.status==='done'?'（已處理）':'（未處理）');
+  bar.appendChild(t);
+  if(rep.desc){ const d=document.createElement('div'); d.style.cssText='margin-top:4px;opacity:.92;white-space:pre-wrap;word-break:break-word'; d.textContent=rep.desc; bar.appendChild(d); }
+  const acts=document.createElement('div'); acts.className='rb-actions';
+  const mk=(label,fn,primary)=>{ const b=document.createElement('button'); b.className='btn-g btn-sm'; b.textContent=label; if(primary) b.style.cssText='background:var(--gold);color:#fff;border-color:var(--gold)'; b.onclick=fn; return b; };
+  acts.appendChild(mk('✏ 編輯這章',()=>enterInlineEdit(),true));
+  acts.appendChild(mk(rep.status==='done'?'↺ 重新開啟':'✓ 標記已處理',()=>{ setReportStatus(ni,rid,rep.status==='done'?'open':'done'); removeReportBar(); showToast(rep.status==='done'?'已標記為處理完成':'已重新開啟'); }));
+  acts.appendChild(mk('✕ 關閉',removeReportBar));
+  bar.appendChild(acts);
+  document.body.appendChild(bar);
+}
+function jumpToReport(ni,rid){
+  if(typeof inlineEditing!=='undefined' && inlineEditing){ showToast('請先儲存或取消編輯再跳轉'); return; }
+  const n=novels[ni]; const rep=(n&&n.reports||[]).find(r=>r.id===rid); if(!rep) return;
+  let ci=n.chapters.findIndex(c=>c.id===rep.chapId);
+  if(ci<0){ showToast('這個章節已經不存在了'); return; }
+  activeNovel=ni;
+  startReading(ci);
+  setTimeout(()=>{
+    const ok=locateReportInPane(rep);
+    showReportBar(ni,rid);
+    if(!ok) showToast('內文可能已被修改，找不到原本那句，已跳到大約的位置',5000);
+  },480);
+}
+
+
+// ══ 前台（讀者）：直接讀雲端 ══
+// 讀者不需要後台、不需要「還原整個書庫」：登入後只讀「書單＋每本書的章節目錄」（很小），
+// 點到哪一章才去雲端抓那一章的內容並存在這台裝置上，之後再讀就不用再抓。
+// 管理者（雲端擁有者）自己在前台時，用本機完整資料，不從雲端覆蓋。
+function cloudOwnerUid(){ return localStorage.getItem('nr3_owner_uid') || (fbUser&&fbUser.uid) || ''; }
+function isOwnerSession(){ return !!(fbUser && fbUser.uid===cloudOwnerUid()); }
+let readerProfile=null; // {uid,name,color}
+
+function showReaderGate(which, msg){
+  const g=document.getElementById('readerGate'); if(!g) return;
+  g.style.display='flex';
+  ['gateSetup','gateLogin','gatePending'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=(id==='gate'+which[0].toUpperCase()+which.slice(1))?'flex':'none'; });
+  document.getElementById('gateMsg').textContent=msg||'';
+  if(which==='pending'){ document.getElementById('gateUid').textContent=(fbUser&&fbUser.uid)||''; }
+}
+function hideReaderGate(){ const g=document.getElementById('readerGate'); if(g) g.style.display='none'; }
+function copyGateUid(){ try{ navigator.clipboard.writeText((fbUser&&fbUser.uid)||''); showToast('已複製識別碼'); }catch(e){ showToast('請手動選取複製'); } }
+
+async function readerBoot(){
+  if(APP_MODE!=='front') return;
+  if(!localStorage.getItem('nr3_owner_uid') || !fsProjectId){
+    if(novels.length) return; // 這台裝置本來就有本機書庫（例如管理者自己的電腦），照常使用
+    showReaderGate('setup'); return;
+  }
+  if(!fbUser){ showReaderGate('login'); return; }
+  await readerEnter();
+}
+async function readerLogin(){
+  const email=document.getElementById('gateEmail').value.trim(), pw=document.getElementById('gatePw').value;
+  const msg=document.getElementById('gateMsg');
+  if(!email||!pw){ msg.textContent='請輸入 Email 與密碼'; return; }
+  if(pw.length<6){ msg.textContent='密碼至少 6 個字'; return; }
+  msg.style.color='var(--ink-3)'; msg.textContent='登入中…';
+  try{
+    let d;
+    try{ d=await fsSignIn(email,pw); }
+    catch(e){
+      if(/INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS/.test(e.message)){
+        // 可能是密碼錯，也可能是還沒有這個帳號；嘗試註冊，如果帳號已存在就代表是密碼錯
+        try{ d=await fsSignUp(email,pw); }
+        catch(e2){ throw new Error(/EMAIL_EXISTS/.test(e2.message)?'密碼錯誤':e2.message); }
+      } else if(/EMAIL_NOT_FOUND/.test(e.message)){ d=await fsSignUp(email,pw); }
+      else throw e;
+    }
+    onAuthSuccess(d,email);
+    msg.style.color='var(--red)'; msg.textContent='';
+    await readerEnter();
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent='登入失敗：'+e.message; }
+}
+function readerLogout(){
+  fbLogout();
+  readerProfile=null;
+  showReaderGate('login');
+}
+async function readerEnter(){
+  const msg=document.getElementById('gateMsg'); if(msg) msg.textContent='';
+  try{
+    // 讀得到書庫根文件＝已被核准；403 代表還沒核准
+    const info=await syncLibraryFromCloud();
+    await loadReaderProfile();
+    hideReaderGate();
+    updateReaderAccountInfo();
+    if(info && info.needRepublish) showToast('部分書籍的章節目錄還沒發布，請管理者在後台重新發布（備份）一次',7000);
+  }catch(e){
+    console.warn(e);
+    if(/權限不足|PERMISSION|permission/i.test(e.message)){ showReaderGate('pending'); }
+    else { showReaderGate(fbUser?'pending':'login', '讀取失敗：'+e.message); }
+  }
+}
+async function loadReaderProfile(){
+  readerProfile=null;
+  if(!fbUser) return;
+  try{
+    const d=await fsRestGet(`users/${cloudOwnerUid()}/profiles/${fbUser.uid}`);
+    if(d){ const p=fromFsDoc(d); readerProfile={uid:fbUser.uid, name:p.name||'讀者', color:p.color||'#888'}; }
+  }catch(e){}
+  if(!readerProfile){
+    const em=localStorage.getItem('nr3_fbemail')||'';
+    readerProfile={uid:fbUser.uid, name:isOwnerSession()?'管理者':(em.split('@')[0]||'讀者'), color:isOwnerSession()?'#b5860d':'#888'};
+  }
+}
+function updateReaderAccountInfo(){
+  const el=document.getElementById('readerAccountInfo'); if(!el) return;
+  const em=localStorage.getItem('nr3_fbemail')||'';
+  el.textContent=readerProfile?`目前身分：${readerProfile.name}（${em}）`:'尚未登入';
+}
+async function readerRefreshLibrary(){
+  if(!fbUser){ showReaderGate('login'); return; }
+  showToast('更新書庫中…');
+  try{ await syncLibraryFromCloud(); showToast('✅ 書庫已更新'); }
+  catch(e){ showToast('更新失敗：'+e.message,5000); }
+}
+
+// 從雲端讀書單與章節目錄，更新本機的「快取書庫」。
+// 章節先只放標題（content:null），內容等讀到才抓。本機已有內容、而且雲端內容指紋沒變的章節
+// 會保留（不用重抓）；畫線、書籤、閱讀進度這些讀者自己的資料一律保留。
+async function syncLibraryFromCloud(){
+  const owner=cloudOwnerUid();
+  if(!owner || !fbUser) return null;
+  if(isOwnerSession() && novels.length) return {skipped:true}; // 管理者本機有完整資料，不用從雲端覆蓋
+  const rootDoc=await fsRestGet(`users/${owner}`);
+  if(!rootDoc) throw new Error('雲端還沒有任何書，請管理者先在後台發布');
+  const ids=Array.isArray(fromFsDoc(rootDoc).novelIds)?fromFsDoc(rootDoc).novelIds:[];
+  const byId=new Map(novels.map(n=>[n.id,n]));
+  const metas=new Map();
+  await pMap(ids, async(nid)=>{
+    try{ const d=await fsRestGet(`users/${owner}/novels/n_${nid}`); if(d) metas.set(nid,fromFsDoc(d)); }
+    catch(e){ if(/權限不足/.test(e.message)) throw e; console.warn('讀取書籍失敗',nid,e); }
+  }, 4);
+  let needRepublish=false;
+  const out=[];
+  for(const nid of ids){
+    const m=metas.get(nid); if(!m){ if(byId.has(nid)) out.push(byId.get(nid)); continue; }
+    let L=byId.get(nid);
+    if(!L){ L={id:nid, name:'', author:'', color:'#4a3728', coverImg:null, chapters:[], bookmarks:[], scrollPct:0, converted:false, lastRead:null, tags:[]}; }
+    L.name=m.name||''; L.author=m.author||''; L.color=m.color||L.color; L.tags=Array.isArray(m.tags)?m.tags:[];
+    if(m.shelfBucket) L.shelfBucket=m.shelfBucket; else delete L.shelfBucket;
+    if(m.rankHistory && typeof m.rankHistory==='object') L.rankHistory=m.rankHistory; else delete L.rankHistory;
+    L.extraManualOrder=!!m.extraManualOrder;
+    if(Array.isArray(m.chapterIndex)){
+      const have=new Map(L.chapters.map(c=>[c.id,c]));
+      L.chapters=m.chapterIndex.map(e=>{
+        let c=have.get(e.id);
+        if(!c) c={id:e.id, title:e.t||'', content:null};
+        c.title=e.t||'';
+        if(e.x===1) c.isExtra=true; else if(e.x===0) c.isExtra=false; else delete c.isExtra;
+        // 內容指紋跟上次抓的不一樣（管理者改過這章）→ 丟掉舊內容，下次讀再重抓
+        if(c.content!=null && c._lh && e.h && c._lh!==e.h){ c.content=null; c.origin=''; c.origContent=''; c.origOrigin=''; }
+        c._rh=e.h||'';
+        return c;
+      });
+      invalidateChapterOrder(L);
+    } else { needRepublish=true; }
+    // 封面
+    if(m.coverHash){
+      if(L._coverHash!==m.coverHash){
+        try{ const cd=await fsRestGet(`users/${owner}/novels/n_${nid}/cover/img`); if(cd){ L.coverImg=fromFsDoc(cd).data||null; L._coverHash=m.coverHash; } }catch(e){}
+      }
+    } else { L.coverImg=null; delete L._coverHash; }
+    out.push(L);
+  }
+  // 管理者在自己的前台：保留本機有、雲端沒有的書；讀者：完全以雲端為準
+  if(isOwnerSession()) novels.forEach(n=>{ if(!out.includes(n)) out.push(n); });
+  novels=out;
+  persist();
+  try{ renderShelf(); }catch(e){}
+  return {needRepublish};
+}
+
+const chapLoading=new Map();
+async function ensureChapterLoaded(ni,ci){
+  const n=novels[ni], c=n&&n.chapters[ci];
+  if(!c || c.content!=null) return;
+  if(!fbUser) throw new Error('尚未登入');
+  const key=n.id+'/'+c.id;
+  if(chapLoading.has(key)) return chapLoading.get(key);
+  const p=(async()=>{
+    const path=`users/${cloudOwnerUid()}/novels/n_${n.id}/chapters/c_${c.id}`;
+    const d=await fsRestGet(path);
+    if(!d) throw new Error('雲端找不到這一章（可能還沒發布）');
+    const cd=fromFsDoc(d);
+    const dec=async v=>cd.compressed?await decompressText(v||''):(v||'');
+    c.content=await dec(cd.content);
+    c.origin=await dec(cd.origin); c.origContent=await dec(cd.origContent); c.origOrigin=await dec(cd.origOrigin);
+    if(cd.isExtra===true||cd.isExtra===false) c.isExtra=cd.isExtra;
+    c._lh=c._rh||'';
+    registerImageHints(n,c);
+    invalidateChapterOrder(n);
+    persist();
+  })().finally(()=>chapLoading.delete(key));
+  chapLoading.set(key,p);
+  return p;
+}
+function registerImageHints(n,c){
+  if(APP_MODE!=='front'||!c) return;
+  const path=`users/${cloudOwnerUid()}/novels/n_${n.id}/chapters/c_${c.id}`;
+  [c.content,c.origContent].forEach(t=>{
+    if(t && t.indexOf('[IMG:ref:')>=0) for(const m of t.matchAll(/\[IMG:ref:([^\]]+)\]/g)) imgCloudHint.set(m[1],path);
+  });
+}
+
+// ══ 後台：讀者管理（邀請連結、讀者名單、安全規則）══
+function getReaders(){ try{ return JSON.parse(localStorage.getItem('nr3_readers')||'[]'); }catch(e){ return []; } }
+function saveReaders(a){ localStorage.setItem('nr3_readers',JSON.stringify(a)); }
+function frontBaseUrl(){
+  const p=localStorage.getItem('nr3_front_path');
+  if(p) return location.origin+p;
+  return location.href.split('#')[0].replace(/admin(\.html)?\/?$/i,'');
+}
+function copyText(t,okMsg){
+  try{ navigator.clipboard.writeText(t).then(()=>showToast(okMsg||'已複製')).catch(()=>{ prompt('請手動複製：',t); }); }
+  catch(e){ prompt('請手動複製：',t); }
+}
+function copyInviteLink(){
+  if(!fbUser){ showToast('請先在上面登入雲端（用你自己的帳號）'); return; }
+  let cfg={}; try{ cfg=JSON.parse(localStorage.getItem('nr3_fbconfig')||'{}'); }catch(e){}
+  if(!cfg.apiKey||!cfg.projectId){ showToast('請先儲存 Firebase 設定'); return; }
+  const o={apiKey:cfg.apiKey, projectId:cfg.projectId, ownerUid:fbUser.uid};
+  copyText(frontBaseUrl()+'#invite='+encodeURIComponent(btoa(JSON.stringify(o))),'✅ 已複製邀請連結，傳給朋友即可');
+}
+function buildRules(){
+  const owner=(fbUser&&fbUser.uid)||'你的識別碼';
+  const uids=getReaders().map(r=>"'"+r.uid.replace(/'/g,'')+"'");
+  const memberList=uids.length?uids.join(', '):"'（尚未加入讀者）'";
+  return `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner() { return signedIn() && request.auth.uid == '${owner}'; }
+    function isMember() { return isOwner() || (signedIn() && request.auth.uid in [${memberList}]); }
+
+    // 管理者：自己的資料夾可讀可寫
+    match /users/{ownerId}/{document=**} {
+      allow read, write: if isOwner() && ownerId == '${owner}';
+    }
+    // 成員（管理者＋核准的讀者）：可以讀書單、章節、讀者名單
+    match /users/{ownerId} {
+      allow read: if ownerId == '${owner}' && isMember();
+    }
+    match /users/{ownerId}/novels/{document=**} {
+      allow read: if ownerId == '${owner}' && isMember();
+    }
+    match /users/{ownerId}/profiles/{document=**} {
+      allow read: if ownerId == '${owner}' && isMember();
+    }
+    // 留言：所有成員都看得到；只能新增、修改、刪除自己的
+    match /users/{ownerId}/notes/{noteId} {
+      allow read: if ownerId == '${owner}' && isMember();
+      allow create: if ownerId == '${owner}' && isMember() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if ownerId == '${owner}' && isMember() && resource.data.uid == request.auth.uid;
+    }
+    // 問題回報：任何成員可以新增；讀者只看得到自己的，管理者看全部
+    match /users/{ownerId}/reports/{reportId} {
+      allow create: if ownerId == '${owner}' && isMember() && request.resource.data.uid == request.auth.uid;
+      allow read: if ownerId == '${owner}' && isMember() && resource.data.uid == request.auth.uid;
+    }
+    // 每位讀者自己的資料（畫線、進度、書籤）：只有本人讀寫，其他人（包含其他讀者）看不到
+    match /users/{ownerId}/readers/{readerId}/{document=**} {
+      allow read, write: if ownerId == '${owner}' && isMember() && request.auth.uid == readerId;
+    }
+  }
+}`;
+}
+async function renderReaderAdmin(){
+  const info=document.getElementById('readerOwnerInfo'); if(!info) return;
+  info.textContent=fbUser?('你的識別碼（管理者）：'+fbUser.uid):'登入雲端後會顯示你的識別碼';
+  const list=document.getElementById('readerList'); list.innerHTML='';
+  const rs=getReaders();
+  if(!rs.length){ const e=document.createElement('div'); e.style.cssText='font-size:12px;color:var(--ink-3)'; e.textContent='還沒有加入讀者'; list.appendChild(e); }
+  rs.forEach(r=>{
+    const row=document.createElement('div'); row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--paper-3);font-size:13px';
+    const dot=document.createElement('span'); dot.style.cssText=`width:14px;height:14px;border-radius:50%;background:${r.color};flex-shrink:0`;
+    const nm=document.createElement('span'); nm.style.cssText='font-weight:600'; nm.textContent=r.name;
+    const id=document.createElement('span'); id.style.cssText='flex:1;color:var(--ink-3);font-size:11px;word-break:break-all'; id.textContent=r.uid;
+    const del=document.createElement('button'); del.className='btn-ghost btn-sm'; del.textContent='移除'; del.style.color='var(--red)';
+    del.onclick=()=>showConfirm(`移除「${r.name}」？移除後記得重新貼一次安全規則。`,()=>removeReader(r.uid));
+    row.appendChild(dot); row.appendChild(nm); row.appendChild(id); row.appendChild(del); list.appendChild(row);
+  });
+  document.getElementById('rulesText').value=buildRules();
+}
+async function addReader(){
+  const uid=document.getElementById('rdUid').value.trim(), name=document.getElementById('rdName').value.trim()||'讀者', color=document.getElementById('rdColor').value;
+  if(!uid){ showToast('請輸入朋友的識別碼'); return; }
+  const rs=getReaders().filter(r=>r.uid!==uid); rs.push({uid,name,color}); saveReaders(rs);
+  if(fbUser && fsProjectId){
+    try{ await fsRestSet(`users/${fbUser.uid}/profiles/${uid}`,{uid,name,color}); showToast('✅ 已加入「'+name+'」，記得更新安全規則'); }
+    catch(e){ showToast('已存在本機名單，但寫入雲端失敗：'+e.message,6000); }
+  } else showToast('已加入名單（請登入雲端後再按一次加入，才會寫到雲端）',5000);
+  document.getElementById('rdUid').value=''; document.getElementById('rdName').value='';
+  renderReaderAdmin();
+}
+async function removeReader(uid){
+  saveReaders(getReaders().filter(r=>r.uid!==uid));
+  if(fbUser && fsProjectId){ try{ await fsRestDelete(`users/${fbUser.uid}/profiles/${uid}`); }catch(e){} }
+  renderReaderAdmin();
+}
+function copyRules(){ copyText(document.getElementById('rulesText').value,'✅ 已複製規則，貼到 Firebase 控制台的 Firestore → 規則'); }
 
 // ══ Novel tags ══
 const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
@@ -4600,6 +5309,7 @@ function jumpToSearchResult(novelIdx, chapIdx){
 }
 
 function openAddModal(){
+  if(!adminOnly()) return;
   try{
     selectedColor=COVER_COLORS[Math.floor(Math.random()*COVER_COLORS.length)];
     initSwatches();
@@ -4619,6 +5329,7 @@ function openAddModal(){
 let editingNovelIdx=-1;
 let pendingEditCoverImg=undefined; // undefined=no change, null=remove, string=new img
 function openEditNovelModal(idx){
+  if(!adminOnly()) return;
   editingNovelIdx=idx;
   const n=novels[idx];
   pendingEditCoverImg=undefined;
@@ -4661,6 +5372,7 @@ function removeEditCover(){
   document.getElementById("btnRemoveCover").style.display="none";
 }
 function confirmEditNovel(){
+  if(!adminOnly()) return;
   if(editingNovelIdx<0)return;
   const n=novels[editingNovelIdx];
   n.name=document.getElementById("editNovelName").value.trim()||n.name;
@@ -4670,9 +5382,10 @@ function confirmEditNovel(){
   const bsel=document.getElementById("editShelfBucket");
   if(bsel){ if(bsel.value==="auto") delete n.shelfBucket; else n.shelfBucket=bsel.value; }
   if(pendingEditCoverImg!==undefined) n.coverImg=pendingEditCoverImg;
-  persist();closeModal("editNovelModal");renderShelf();showToast("✅ 已更新書籍資訊");
+  persist();triggerCloudSyncAfterEdit();closeModal("editNovelModal");renderShelf();showToast("✅ 已更新書籍資訊");
 }
 function confirmDeleteNovel(){
+  if(!adminOnly()) return;
   if(editingNovelIdx<0)return;
   const n=novels[editingNovelIdx];
   if(!confirm("確定刪除「"+n.name+"」？所有章節也會一併刪除。"))return;
@@ -4683,7 +5396,7 @@ function confirmDeleteNovel(){
   // 這是唯一會觸發雲端刪除小說的地方——不會再用「本機陣列裡找不到」去推測。
   if(n.id) markNovelDeletedForSync(n.id);
   novels.splice(editingNovelIdx,1);
-  persist();closeModal("editNovelModal");renderShelf();showToast("已刪除");
+  persist();triggerCloudSyncAfterEdit();closeModal("editNovelModal");renderShelf();showToast("已刪除");
 }
 function markNovelDeletedForSync(novelId){
   try{
@@ -4711,6 +5424,7 @@ async function inlineRefsForExport(text){
   return t.replace(/\[IMG:ref:([^\]]+)\]/g,(m,id)=>map[id]?`[IMG:${map[id]}]`:'');
 }
 async function exportNovel(idx){
+  if(!adminOnly()) return;
   const n=novels[idx];
   if(!n){ showToast("找不到這本小說"); return; }
   showToast("準備匯出檔案...");
@@ -4747,6 +5461,7 @@ async function exportNovel(idx){
 }
 
 function importNovelFile(inputEl){
+  if(!adminOnly()) return;
   const file=inputEl.files&&inputEl.files[0];
   if(!file) return;
   const reader=new FileReader();
@@ -4789,9 +5504,10 @@ function importNovelFile(inputEl){
 }
 
 function confirmAddNovel(){
+  if(!adminOnly()) return;
   const name=document.getElementById("addName").value.trim();if(!name){alert("請輸入小說名稱");return;}
   novels.push({id:genId('nv'),name,author:document.getElementById("addAuthor").value.trim(),color:selectedColor,coverImg:pendingCoverImg||null,chapters:[],bookmarks:[],scrollPct:0,converted:false,lastRead:null,tags:[...tagState.add]});
-  persist();closeModal("addModal");renderShelf();
+  persist();triggerCloudSyncAfterEdit();closeModal("addModal");renderShelf();
   showToast("📚 「"+name+"」已新增！");
   // 書籍已經建立好了；接著直接跳出新增章節視窗，方便馬上加第一章，
   // 不想加的話直接關掉視窗即可，書籍依然保留（沒有章節也沒關係）。
@@ -4810,6 +5526,7 @@ function triggerBatchImport(fileInputId){
 }
 
 function openChapterModal(novelIdx,chapIdx=-1){
+  if(!adminOnly()) return;
   editingChapterIdx=chapIdx;
   const isEdit=chapIdx>=0,n=novels[novelIdx],c=isEdit?n.chapters[chapIdx]:{};
   document.getElementById("chapterModalTitle").textContent=isEdit?"編輯章節":"新增章節";
@@ -5032,6 +5749,7 @@ function newChapNote(nf){
 }
 
 async function batchImportChapters(files){
+  if(!adminOnly()) return;
   if(activeNovel < 0){ showToast('請先開啟一本小說'); return; }
   // Sort files by name so order is predictable
   files.sort((a,b) => a.name.localeCompare(b.name, 'zh-TW', {numeric:true}));
@@ -5093,6 +5811,7 @@ async function batchImportChapters(files){
 // ocrImageToText。某一張辨識失敗不會擋住其他張，最後會統一提示
 // 幾張成功、幾張失敗。
 async function batchImportImageChapters(files){
+  if(!adminOnly()) return;
   if(activeNovel < 0){ showToast('請先開啟一本小說'); return; }
   if(!getApiKey()){ showToast('請先到設定頁填入 Anthropic API Key 才能匯入截圖章節'); return; }
   files.sort((a,b) => a.name.localeCompare(b.name, 'zh-TW', {numeric:true}));
@@ -5649,6 +6368,7 @@ function fbLogout(){
 }
 
 function setFbLoggedIn(yes){
+  if(APP_MODE==='admin') setTimeout(()=>{ try{renderReaderAdmin();}catch(e){} },0);
   if(APP_MODE==='admin') setTimeout(()=>nrBroadcast('session'),0); // 通知前台重新讀取登入狀態
   document.getElementById('btnFbLogin').style.display   = yes?'none':'inline-flex';
   document.getElementById('fbPassword').style.display   = yes?'none':'block';
@@ -5763,7 +6483,7 @@ function saveSyncMeta(m){
 function novelMetaHash(n, chapterHashMap){
   const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
   const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
-  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],shelfBucket:n.shelfBucket||'',rankHistory:n.rankHistory||null,chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint}));
+  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],shelfBucket:n.shelfBucket||'',rankHistory:n.rankHistory||null,reports:n.reports||null,chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint,idx:1,cover:n.coverImg?hashStr(n.coverImg):''}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -5803,6 +6523,7 @@ async function saveUploadedImgSet(set){ await idbSet('imgUploaded',[...set]); }
 let lastCloudVerifyAt=0;
 
 async function fbBackup(auto){
+  if(APP_MODE==='front') return false; // 前台只讀取雲端，書的內容只有後台能上傳
   if(!fbUser || !fsProjectId){ if(!auto) showToast('請先輸入密碼連線'); return false; }
   // 後台打開之後，前台可能又改了資料（讀進度、編輯…）；備份前先重新讀一次本機資料，才不會傳舊的
   if(APP_MODE==='admin'){ try{ const d=await idbGet('novels'); if(Array.isArray(d)) novels=d; }catch(e){} }
@@ -6005,9 +6726,16 @@ async function fbBackup(auto){
         // （tombstone 清單裡有記錄）才允許真的從清單移除。
         let mergedChapterOrder  = localChapterOrder;
         let mergedChapterHashes = localChapterHashes;
+        let mergedReportsChanged = false;
         try{
           const remoteNovelDoc = await fsRestGet(`users/${uid}/novels/n_${t.id}`);
           const remoteNovel = remoteNovelDoc ? fromFsDoc(remoteNovelDoc) : null;
+          // 問題回報：前台（可能在別台裝置）送出的回報存在雲端，這裡跟本機的回報依 id 合併，
+          // 兩邊都不會被蓋掉（同一則回報以較新的狀態為準）
+          if(remoteNovel && Array.isArray(remoteNovel.reports)){
+            const mr=mergeReports(n.reports, remoteNovel.reports);
+            if(JSON.stringify(mr)!==JSON.stringify(n.reports||[])){ n.reports=mr; mergedReportsChanged=true; }
+          }
           if(remoteNovel && Array.isArray(remoteNovel.chapterOrder)){
             const localIdSet  = new Set(localChapterOrder);
             const tombstoned  = new Set(deletedChapterKeys.filter(k=>k.startsWith(t.id+'::')).map(k=>k.slice(t.id.length+2)));
@@ -6046,11 +6774,17 @@ async function fbBackup(auto){
         await fsRestSet(`users/${uid}/novels/n_${t.id}`, {
           id:n.id, name:n.name||'', author:n.author||'', color:n.color||'',
           converted:n.converted||false, bookmarks:n.bookmarks||[], lastRead:n.lastRead||null,
-          chapterCount:mergedChapterOrder.length, tags:n.tags||[], shelfBucket:n.shelfBucket||'', ...(n.rankHistory?{rankHistory:n.rankHistory}:{}), chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
+          chapterCount:mergedChapterOrder.length, tags:n.tags||[], shelfBucket:n.shelfBucket||'', ...(n.rankHistory?{rankHistory:n.rankHistory}:{}), ...(Array.isArray(n.reports)&&n.reports.length?{reports:n.reports}:{}),
+          // 給「前台讀者」用的章節目錄：標題、正篇/番外、內容指紋（h）。讀者只讀這一份文件就能列出整本書的
+          // 章節，點到哪一章才去抓那一章，不用把整本書的章節文件都讀一遍（省讀取額度）。
+          chapterIndex: n.chapters.map(c=>({id:c.id, t:c.title||'', x:c.isExtra===true?1:(c.isExtra===false?0:2), h:(localChapterHashes[c.id]||chapterHash(c))})),
+          coverHash: n.coverImg ? hashStr(n.coverImg) : '',
+          chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
           chapterHashes:mergedChapterHashes,
           coverHash: n.coverImg ? hashStr(n.coverImg) : null,
         });
         okMeta.add(t.id);
+        if(mergedReportsChanged) persist();
       } else if(t.type==='coverImg'){
         const n=novels.find(x=>x.id===t.id);
         try{
@@ -6508,6 +7242,7 @@ async function _doRestore(){
         tags:      nData.tags      || [],
         ...(nData.shelfBucket ? {shelfBucket:nData.shelfBucket} : {}),
         ...(nData.rankHistory && typeof nData.rankHistory==='object' ? {rankHistory:nData.rankHistory} : {}),
+        ...(Array.isArray(nData.reports) ? {reports:nData.reports} : {}),
         extraManualOrder: !!nData.extraManualOrder,
         chapters,
       });
@@ -6554,6 +7289,7 @@ async function _doRestore(){
     setTimeout(()=>{ overlay.style.display='none'; }, 1200);
     setFbStatus('✅ 還原成功！備份時間：' + ts);
     showToast(dedupedTotal ? `✅ 還原成功！已自動清掉 ${dedupedTotal} 個重複章節` : '✅ 還原成功！');
+    nrBroadcast('data-changed'); // 還原後，還開著的前台要重新整理
     if(dedupedTotal) triggerCloudSyncAfterEdit(); // 順便清理雲端那份殘留
     renderShelf();
     goShelf();
@@ -7266,13 +8002,10 @@ let toastT;function showToast(m,duration=2200){const e=document.getElementById("
 async function init(){
   try{await load();}catch(e){console.error("load error:",e);}
   if(APP_MODE==='admin'){
-    // 後台：只顯示管理頁；不做書架渲染、不跑自動同步／圖片搬移這些前台才需要的背景工作
-    document.body.classList.add('admin-mode');
     document.title='後台管理 · 小說閱讀助手';
-    showView('viewAdmin');
-    try{initFirebase();}catch(e){console.error("firebase init error:",e);}
-    try{updateStorageInfo();}catch(e){}
-    return;
+    const ht=document.querySelector('.htitle'); if(ht) ht.textContent='🔧 後台管理';
+  } else {
+    const h=document.getElementById('shelfEmptyHint'); if(h) h.textContent='書架還是空的，書籍由管理者在後台新增';
   }
   try{renderShelf();}catch(e){console.error("shelf error:",e);}
   try{initFirebase();}catch(e){console.error("firebase init error:",e);}
@@ -7280,6 +8013,14 @@ async function init(){
   // 舊資料的內嵌圖片搬到外存：等畫面閒下來再做，不跟首次載入搶資源
   const _idle=window.requestIdleCallback||(f=>setTimeout(f,1500));
   setTimeout(()=>_idle(()=>migrateInlineImagesToStore()), 4000);
+  if(APP_MODE==='admin'){
+    try{updateStorageInfo();}catch(e){}
+    updateReportBadge();
+    showView('viewShelf'); // 後台從「書籍管理」開始，並顯示導覽列
+    try{renderReaderAdmin();}catch(e){console.error(e);}
+  } else {
+    readerBoot(); // 前台：登入 → 從雲端讀書庫
+  }
 }
 // ══ 手機返回鍵 ══
 // 預設行為：在 App 裡按返回鍵會直接離開（回到手機主畫面），因為整個 App 只有
@@ -7308,6 +8049,8 @@ function handleAppBack(){
     case 'viewNovel': goNovelBack(); return true;
     case 'viewDetail': goShelf(); return true;
     case 'viewSettings':
+    case 'viewAdmin':
+    case 'viewReports':
     case 'viewRank': goShelf(); return true;
   }
   return false; // 已經在書架：放行，讓返回鍵正常離開 App
