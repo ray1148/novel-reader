@@ -293,6 +293,12 @@ header{display:flex;align-items:center;gap:8px;padding:0 14px;height:52px;backgr
 .rank-edit-row input{width:72px;text-align:center}
 .settings-section{display:flex;flex-direction:column;gap:12px}
 body.mode-admin .front-only{display:none!important}
+/* 後台一眼就能分辨：最上方一條金色粗線、導覽列換成深色底、角落標明模式與版本 */
+body.mode-admin{border-top:5px solid var(--gold)}
+body.mode-admin .admin-bar{background:#2a2010;border-bottom:2px solid var(--gold)}
+body.mode-admin .admin-bar .btn-g,body.mode-admin .admin-bar .btn-ghost{color:#f0e0b0}
+.admin-tag{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;margin-right:4px}
+#modeStamp{position:fixed;right:8px;bottom:6px;font-size:10px;color:var(--ink-3);opacity:.7;z-index:60;pointer-events:none;background:var(--paper);padding:1px 6px;border-radius:8px;border:1px solid var(--paper-3)}
 .reader-gate{position:fixed;inset:0;z-index:99990;background:var(--paper);display:none;align-items:center;justify-content:center;padding:20px;overflow:auto}
 .gate-card{width:min(420px,100%);display:flex;flex-direction:column;gap:12px}
 .gate-title{font-size:20px;font-weight:700;text-align:center}
@@ -476,6 +482,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
 </div>
 <!-- 後台導覽列（只有後台模式才會顯示） -->
 <div class="admin-bar" id="adminBar">
+  <span class="admin-tag">🔧 後台管理</span>
   <button class="btn-g btn-sm" id="abShelf" onclick="goShelf()">📚 書籍管理</button>
   <button class="btn-g btn-sm" id="abReports" onclick="goReports()">🚩 問題回報<span class="admin-badge" id="adminBadge" style="display:none"></span></button>
   <button class="btn-g btn-sm" id="abSystem" onclick="showView('viewAdmin')">⚙ 系統設定</button>
@@ -940,6 +947,16 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <button class="btn-g btn-sm" onclick="copyRules()" style="align-self:flex-start">📋 複製規則</button>
     </div>
 
+    <div class="settings-section" id="auditSection">
+      <div class="settings-title">☁ 雲端內容校對</div>
+      <div style="font-size:12px;color:var(--ink-3);line-height:1.8">
+        把「本機的書」和「雲端實際存的章節」一章一章比對，找出三種問題：<br>
+        <b>缺漏</b>：本機有、雲端沒有（朋友會讀不到）　<b>舊版</b>：雲端的內容跟本機不一樣（朋友讀到舊的）　<b>多餘</b>：雲端有、本機已經刪掉的章節。<br>
+        檢查會讀取那本書雲端的所有章節，章節很多的書會用掉不少每日讀取額度，請一次檢查一本。
+      </div>
+      <div id="auditList"></div>
+    </div>
+
     <div class="settings-section">
       <div class="settings-title">資料管理</div>
       <div style="font-size:13px;color:var(--ink-2)">目前儲存 <strong id="storageNovelCount">0</strong> 本小說，<strong id="storageSize">—</strong></div>
@@ -1300,8 +1317,20 @@ function s2t(text){
 // admin.html 就是這個檔案原封不動的複本（兩份一起上傳）。兩邊共用同一份本機資料
 // （IndexedDB／localStorage），所以改完回前台就會看到。
 // GitHub Pages 也能用「/admin」（不寫 .html）開到 admin.html，所以兩種寫法都要認
-const APP_MODE = /(^|\/)admin(\.html)?\/?$/i.test(location.pathname) ? 'admin' : 'front';
+// 檔名以 admin 開頭（後面不是英數字）就是後台：admin.html、admin (1).html（瀏覽器重複下載時會自動加的）、
+// admin_新版.html、/admin、/admin/ 都算；administrator.html 這類不算。
+const APP_MODE = (()=>{
+  let seg=''; try{ seg=decodeURIComponent(location.pathname.replace(/\/+$/,'').split('/').pop()||''); }catch(e){ seg=location.pathname; }
+  return /^admin(?![a-z0-9])/i.test(seg) ? 'admin' : 'front';
+})();
+const BUILD_ID='2026-11-24.6'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
 document.body.classList.add('mode-'+APP_MODE); // 前台隱藏 .admin-only 的管理功能（見 CSS）
+(function modeStamp(){
+  const d=document.createElement('div');
+  d.id='modeStamp';
+  d.textContent=(APP_MODE==='admin'?'🔧 後台':'📖 前台')+' · '+BUILD_ID;
+  document.body.appendChild(d);
+})();
 // 前台只能閱讀／畫線／留言／排行／回報；新增上傳、編輯、刪除這些寫資料的管理功能只在後台。
 // 畫面上的按鈕已經在前台隱藏，這裡再多擋一層，萬一從別的路徑呼叫到也不會執行。
 function adminOnly(){
@@ -4955,6 +4984,11 @@ async function syncLibraryFromCloud(){
         c._rh=e.h||'';
         return c;
       });
+      if(m.contentRev!==undefined && L._contentRev!==m.contentRev){
+        // 管理者要求重新下載（例如修復了雲端上的舊版章節）：丟掉這本書所有已暫存的章節內容
+        L.chapters.forEach(c=>{ if(c.content!=null){ c.content=null; c.origin=''; c.origContent=''; c.origOrigin=''; } c._lh=''; });
+      }
+      L._contentRev=m.contentRev;
       invalidateChapterOrder(L);
     } else { needRepublish=true; }
     // 封面
@@ -4989,7 +5023,8 @@ async function ensureChapterLoaded(ni,ci){
     c.content=await dec(cd.content);
     c.origin=await dec(cd.origin); c.origContent=await dec(cd.origContent); c.origOrigin=await dec(cd.origOrigin);
     if(cd.isExtra===true||cd.isExtra===false) c.isExtra=cd.isExtra;
-    c._lh=c._rh||'';
+    c._lh=cd.h||c._rh||''; // 以雲端文件自己記的指紋為準：如果跟目錄指紋不同，代表這章雲端還是舊版，下次整理書庫時會重抓
+    if(cd.h && c._rh && cd.h!==c._rh && !c._warnedStale){ c._warnedStale=true; showToast('⚠️ 這一章在雲端還是舊版本（管理者還沒完成上傳）',6000); }
     registerImageHints(n,c);
     invalidateChapterOrder(n);
     persist();
@@ -5101,6 +5136,120 @@ async function removeReader(uid){
   renderReaderAdmin();
 }
 function copyRules(){ copyText(document.getElementById('rulesText').value,'✅ 已複製規則，貼到 Firebase 控制台的 Firestore → 規則'); }
+
+
+// ══ 後台：雲端內容校對 ══
+const auditResults={};
+function renderAudit(){
+  const box=document.getElementById('auditList'); if(!box) return;
+  box.innerHTML='';
+  if(!novels.length){ box.textContent='（本機還沒有書）'; box.style.cssText='font-size:12px;color:var(--ink-3)'; return; }
+  novels.forEach((n,ni)=>{
+    const row=document.createElement('div'); row.style.cssText='border-bottom:1px solid var(--paper-3);padding:8px 0';
+    const head=document.createElement('div'); head.style.cssText='display:flex;align-items:center;gap:8px';
+    const nm=document.createElement('div'); nm.style.cssText='flex:1;font-size:13px;font-weight:600;word-break:break-word';
+    nm.textContent=`《${n.name||'未命名'}》　本機 ${n.chapters.length} 章`;
+    const b=document.createElement('button'); b.className='btn-g btn-sm'; b.textContent='🔍 檢查'; b.onclick=()=>auditNovel(ni);
+    head.appendChild(nm); head.appendChild(b); row.appendChild(head);
+    const res=document.createElement('div'); res.id='audit_'+n.id; row.appendChild(res);
+    box.appendChild(row);
+    if(auditResults[n.id]) renderAuditResult(ni);
+  });
+}
+function auditStatus(n,text){ const el=document.getElementById('audit_'+n.id); if(el){ el.style.cssText='font-size:12px;color:var(--ink-3);padding-top:6px'; el.textContent=text; } }
+async function auditNovel(ni){
+  const n=novels[ni];
+  if(!fbUser||!fsProjectId){ showToast('請先在上面登入雲端'); return; }
+  showConfirm(`檢查《${n.name}》會讀取雲端上這本書的所有章節（約 ${n.chapters.length} 次以上讀取）。要開始嗎？`, async ()=>{
+    try{
+      auditStatus(n,'讀取雲端章節中…（章節多的話要一陣子）');
+      const uid=fbUser.uid;
+      const docs=await fsListAllPaged(`users/${uid}/novels/n_${n.id}/chapters`, []);
+      const cloud=new Map();
+      let k=0;
+      for(const d of docs){
+        const last=d.name.split('/').pop(); if(!last.startsWith('c_')) continue;
+        const cd=fromFsDoc(d)||{};
+        const content=cd.compressed?await decompressText(cd.content||''):(cd.content||'');
+        cloud.set(last.slice(2),{title:cd.title||'', content});
+        if(++k%40===0){ auditStatus(n,`比對中… ${k}/${docs.length}`); await new Promise(r=>setTimeout(r,0)); }
+      }
+      const missing=[], stale=[], ok=[];
+      n.chapters.forEach(c=>{
+        const cc=cloud.get(c.id);
+        if(!cc){ missing.push(c); return; }
+        const expect=extractInlineImages(c.content||'').text;
+        if(cc.content!==expect || (cc.title||'')!==(c.title||'')) stale.push(c); else ok.push(c);
+      });
+      const localIds=new Set(n.chapters.map(c=>c.id));
+      const orphans=[...cloud.entries()].filter(([id])=>!localIds.has(id)).map(([id,v])=>({id,title:v.title}));
+      auditResults[n.id]={missing,stale,ok:ok.length,orphans,at:Date.now()};
+      renderAuditResult(ni);
+    }catch(e){
+      console.error(e);
+      auditStatus(n,'檢查失敗：'+e.message);
+      if(isQuotaError(e)) showToast('⏸ 今日雲端讀取額度已用完，明天再檢查',6000);
+    }
+  });
+}
+function renderAuditResult(ni){
+  const n=novels[ni]; const r=auditResults[n.id]; const el=document.getElementById('audit_'+n.id); if(!el||!r) return;
+  el.style.cssText='padding-top:8px'; el.innerHTML='';
+  const line=(t,color)=>{ const d=document.createElement('div'); d.style.cssText='font-size:12px;line-height:1.7;'+(color?('color:'+color):''); d.textContent=t; el.appendChild(d); };
+  line(`✅ 一致 ${r.ok} 章　⚠️ 缺漏 ${r.missing.length} 章　🕘 舊版 ${r.stale.length} 章　🗑 雲端多餘 ${r.orphans.length} 章`);
+  const list=(arr,label)=>{
+    if(!arr.length) return;
+    const det=document.createElement('details'); det.style.cssText='font-size:12px;margin:4px 0';
+    const sm=document.createElement('summary'); sm.textContent=label+'（'+arr.length+'）'; sm.style.cursor='pointer'; det.appendChild(sm);
+    const box=document.createElement('div'); box.style.cssText='max-height:160px;overflow:auto;background:var(--paper-2);padding:6px 8px;border-radius:6px;margin-top:4px;line-height:1.7';
+    box.textContent=arr.map(x=>x.title||x.id).join('、'); det.appendChild(box); el.appendChild(det);
+  };
+  list(r.missing,'缺漏的章節'); list(r.stale,'舊版的章節'); list(r.orphans,'雲端多餘的章節');
+  const acts=document.createElement('div'); acts.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px';
+  const mk=(label,fn,danger)=>{ const b=document.createElement('button'); b.className='btn-g btn-sm'; b.textContent=label; if(danger) b.style.cssText='color:var(--red);border-color:var(--red)'; b.onclick=fn; acts.appendChild(b); };
+  if(r.missing.length||r.stale.length) mk(`⬆ 補傳缺漏與舊版（${r.missing.length+r.stale.length} 章）`,()=>auditRepairUpload(ni));
+  if(r.orphans.length) mk(`🗑 刪除雲端多餘章節（${r.orphans.length} 章）`,()=>auditDeleteOrphans(ni),true);
+  mk('🔄 讓朋友重新下載這本',()=>auditForceReaders(ni));
+  el.appendChild(acts);
+}
+// 補傳：把這些章節在「上次同步紀錄」裡的指紋清掉，再跑一次備份，備份就會把它們當成「有變動」重傳
+async function auditRepairUpload(ni){
+  const n=novels[ni], r=auditResults[n.id]; if(!r) return;
+  const ids=[...r.missing,...r.stale].map(c=>c.id);
+  const sm=loadSyncMeta(); const nm=sm.novels&&sm.novels[n.id];
+  if(nm){ ids.forEach(id=>{ delete nm.chapters[id]; }); nm.metaHash=null; saveSyncMeta(sm); }
+  n.contentRev=(n.contentRev||1)+1; // 順便通知朋友的前台：這本書暫存的內容要重新下載
+  persist();
+  showToast(`開始補傳 ${ids.length} 章…`);
+  const ok=await fbBackup(false);
+  if(ok){ delete auditResults[n.id]; renderAudit(); showToast('✅ 補傳完成，建議再按一次「檢查」確認'); }
+}
+async function auditDeleteOrphans(ni){
+  const n=novels[ni], r=auditResults[n.id]; if(!r||!r.orphans.length) return;
+  showConfirm(`要從雲端刪除這 ${r.orphans.length} 個多餘的章節嗎？（本機的書不受影響；刪掉就沒辦法從雲端找回）`, async ()=>{
+    try{
+      const uid=fbUser.uid; let done=0;
+      for(const o of r.orphans){
+        await deleteCol(`users/${uid}/novels/n_${n.id}/chapters/c_${o.id}/images`).catch(()=>{});
+        await fsRestDelete(`users/${uid}/novels/n_${n.id}/chapters/c_${o.id}`);
+        done++; if(done%10===0) auditStatus(n,`刪除中… ${done}/${r.orphans.length}`);
+      }
+      // 重寫書籍目錄，讓雲端的章節清單也只剩本機有的章節
+      const sm=loadSyncMeta(); const nm=sm.novels&&sm.novels[n.id]; if(nm){ nm.metaHash=null; saveSyncMeta(sm); }
+      n.contentRev=(n.contentRev||1)+1; persist();
+      await fbBackup(false);
+      delete auditResults[n.id]; renderAudit();
+      showToast(`✅ 已刪除 ${done} 個多餘章節`);
+    }catch(e){ showToast('刪除失敗：'+e.message,6000); }
+  });
+}
+async function auditForceReaders(ni){
+  const n=novels[ni];
+  n.contentRev=(n.contentRev||1)+1; persist();
+  const sm=loadSyncMeta(); const nm=sm.novels&&sm.novels[n.id]; if(nm){ nm.metaHash=null; saveSyncMeta(sm); }
+  const ok=await fbBackup(false);
+  if(ok) showToast('✅ 已通知朋友的前台：這本書下次打開會重新下載章節');
+}
 
 // ══ Novel tags ══
 const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
@@ -6483,7 +6632,7 @@ function saveSyncMeta(m){
 function novelMetaHash(n, chapterHashMap){
   const chm = chapterHashMap || Object.fromEntries(n.chapters.map(c=>[c.id, chapterHash(c)]));
   const chapterHashesFingerprint = hashStr(n.chapters.map(c=>c.id+':'+(chm[c.id]||'')).join('|'));
-  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],shelfBucket:n.shelfBucket||'',rankHistory:n.rankHistory||null,reports:n.reports||null,chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint,idx:1,cover:n.coverImg?hashStr(n.coverImg):''}));
+  return hashStr(stableStringify({name:n.name||'',author:n.author||'',color:n.color||'',converted:!!n.converted,bookmarks:n.bookmarks||[],lastRead:n.lastRead||null,chapterCount:n.chapters.length,tags:n.tags||[],shelfBucket:n.shelfBucket||'',rankHistory:n.rankHistory||null,reports:n.reports||null,chapterOrder:n.chapters.map(c=>c.id),extraManualOrder:!!n.extraManualOrder,chapterHashesFingerprint,idx:1,cr:n.contentRev||1,cover:n.coverImg?hashStr(n.coverImg):''}));
 }
 function chapterHash(c){
   const extraFlag = c.isExtra===true?'1':c.isExtra===false?'0':'u';
@@ -6706,7 +6855,7 @@ async function fbBackup(auto){
     const coverSyncFailed=[]; // 收集封面圖片同步失敗的小說名稱，最後統一提示，不中斷其他同步
     const inlineImgSyncFailed=[]; // 收集內嵌圖片同步失敗的章節標題
     if(!auto) msg.textContent = `同步中...（共 ${total} 項）`;
-    await pMap(tasks, async (t)=>{
+    const runTask = async (t)=>{
       if(t.type==='deleteNovel'){
         await deleteCol(`users/${uid}/novels/n_${t.id}/chapters`);
         await fsRestDelete(`users/${uid}/novels/n_${t.id}/cover/img`).catch(()=>{}); // 可能本來就沒有封面，忽略失敗
@@ -6736,7 +6885,11 @@ async function fbBackup(auto){
             const mr=mergeReports(n.reports, remoteNovel.reports);
             if(JSON.stringify(mr)!==JSON.stringify(n.reports||[])){ n.reports=mr; mergedReportsChanged=true; }
           }
-          if(remoteNovel && Array.isArray(remoteNovel.chapterOrder)){
+          // 以前這裡會把「雲端有、本機沒有」的章節保留進清單（為了多台裝置各自新增章節不互相覆蓋）。
+          // 現在後台（本機）是唯一能改書內容的地方，所以以本機為準：你在本機刪掉的章節，不會再被
+          // 當成「別台裝置新增的」又放回去。雲端上殘留的舊章節請用「雲端內容校對」清理。
+          const MERGE_REMOTE_EXTRAS=false;
+          if(MERGE_REMOTE_EXTRAS && remoteNovel && Array.isArray(remoteNovel.chapterOrder)){
             const localIdSet  = new Set(localChapterOrder);
             const tombstoned  = new Set(deletedChapterKeys.filter(k=>k.startsWith(t.id+'::')).map(k=>k.slice(t.id.length+2)));
             let extraIds    = remoteNovel.chapterOrder.filter(cid=>!localIdSet.has(cid) && !tombstoned.has(cid));
@@ -6779,6 +6932,7 @@ async function fbBackup(auto){
           // 章節，點到哪一章才去抓那一章，不用把整本書的章節文件都讀一遍（省讀取額度）。
           chapterIndex: n.chapters.map(c=>({id:c.id, t:c.title||'', x:c.isExtra===true?1:(c.isExtra===false?0:2), h:(localChapterHashes[c.id]||chapterHash(c))})),
           coverHash: n.coverImg ? hashStr(n.coverImg) : '',
+          contentRev: n.contentRev||1, // 管理者要讓讀者「全部重新下載」時加 1（見雲端內容校對）
           chapterOrder:mergedChapterOrder, extraManualOrder:!!n.extraManualOrder,
           chapterHashes:mergedChapterHashes,
           coverHash: n.coverImg ? hashStr(n.coverImg) : null,
@@ -6829,7 +6983,7 @@ async function fbBackup(auto){
         const origOrigin  = await compressText(c.origOrigin  || '');
         await fsRestSet(`users/${uid}/novels/n_${t.novelId}/chapters/c_${t.chapId}`, {
           id: c.id, title: c.title||'', compressed:true, content, origin, origContent, origOrigin,
-          highlights: c.highlights||[], isExtra: c.isExtra,
+          highlights: c.highlights||[], isExtra: c.isExtra, h: chapterHash(c),
         });
         okChapters.add(t.novelId+'::'+t.chapId);
       } else if(t.type==='deleteChapter'){
@@ -6844,7 +6998,12 @@ async function fbBackup(auto){
         bar.style.width = ((done/total)*100)+'%';
         msg.textContent = `同步中... ${done}/${total}`;
       }
-    }, 6);
+    };
+    // 順序很重要：先上傳章節／圖片／刪除，全部成功後，才寫「書籍目錄」（章節清單、章節指紋）。
+    // 以前是同時進行，如果章節上傳到一半失敗（例如額度用完），目錄卻已經寫成「全部傳好了」，
+    // 前台讀者就會看到列在目錄裡、其實沒傳上去的章節，或是舊版內容還被當成最新。
+    await pMap(tasks.filter(t=>t.type!=='novelMeta'), runTask, 6);
+    await pMap(tasks.filter(t=>t.type==='novelMeta'), runTask, 6);
 
     // 3. 更新全域設定（小，成本低，每次都寫入），含合併後的閱讀時間，
     //    以及目前小說的 id 順序（還原時要靠這個知道抓哪些文件、依什麼順序組回去）。
@@ -8018,6 +8177,7 @@ async function init(){
     updateReportBadge();
     showView('viewShelf'); // 後台從「書籍管理」開始，並顯示導覽列
     try{renderReaderAdmin();}catch(e){console.error(e);}
+    try{renderAudit();}catch(e){console.error(e);}
   } else {
     readerBoot(); // 前台：登入 → 從雲端讀書庫
   }
