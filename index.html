@@ -533,8 +533,9 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
     <div style="display:flex;align-items:center;gap:12px">
       <button class="back-btn" onclick="goShelf()">←</button>
       <span style="font-size:16px;font-weight:600;flex:1">🏆 排行榜</span>
-      <button class="btn-g btn-sm admin-only" id="rankEditBtn" onclick="toggleRankEdit()">✏ 編輯名次</button>
+      <button class="btn-g btn-sm" id="rankEditBtn" onclick="toggleRankEdit()">✏ 編輯名次</button>
     </div>
+    <div id="rankModeRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
     <div class="rank-weekbar">
       <button class="btn-g btn-sm" onclick="rankGoWeek(-1)">‹ 上週</button>
       <span class="rank-weeklabel" id="rankWeekLabel"></span>
@@ -1323,7 +1324,7 @@ const APP_MODE = (()=>{
   let seg=''; try{ seg=decodeURIComponent(location.pathname.replace(/\/+$/,'').split('/').pop()||''); }catch(e){ seg=location.pathname; }
   return /^admin(?![a-z0-9])/i.test(seg) ? 'admin' : 'front';
 })();
-const BUILD_ID='2026-11-24.6'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
+const BUILD_ID='2026-11-24.7'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
 document.body.classList.add('mode-'+APP_MODE); // 前台隱藏 .admin-only 的管理功能（見 CSS）
 (function modeStamp(){
   const d=document.createElement('div');
@@ -4093,12 +4094,17 @@ function initSwatches(){
 }
 
 // ══ 排行榜 ══
-// 名次是手動設定、以「週」為單位：每本書的 n.rankHistory = {週一日期: 名次}。
-// 相同數字＝並列名次（同一列並排顯示）。升降是跟「這本書更早之前最近一次
-// 有名次的那一週」比：名次數字變小＝上升 ▲，變大＝下降 ▼，沒變＝－，
-// 以前從沒上榜過＝NEW。因為存在每本書自己身上，會跟著雲端同步。
+// 每個人各自幫書排名（以「週」為單位），名次存在雲端 users/<管理者>/ranks/<自己的識別碼>。
+// 所有成員都讀得到彼此的名次（才能算綜合排名），但只能改自己的。畫面有兩種看法：
+//  • 我的排名：只看自己設定的名次，可以編輯。
+//  • 綜合排名：把所有人那一週的名次，對每本書取平均（只算「有排到那本書的人」），平均越小越前面；
+//    平均一樣就並列。每本書下面會列出每個人給的名次（用各人的顏色）。
+// 名次數字相同＝並列，同一列並排顯示。升降 ▲▼ 是跟「上一次有排名的那一週」比，沒上過榜＝NEW。
 let rankWeek = null;
 let rankEditing = false;
+let rankMode = 'mine';           // 'mine' | 'all'
+let myRanks = {weeks:{}, updatedAt:0};  // {週一日期: {小說id: 名次}}
+let allRanks = null;             // 其他人的名次（從雲端讀）：[{uid,name,color,weeks}]
 function rankPad(n){ return String(n).padStart(2,'0'); }
 function rankWeekKey(d){
   const x=new Date(d); x.setHours(0,0,0,0);
@@ -4112,18 +4118,116 @@ function rankWeekLabel(k){
   const f=d=>`${d.getMonth()+1}/${d.getDate()}`;
   return `${a.getFullYear()}　${f(a)} – ${f(b)}`+(k===rankWeekKey(new Date())?'（本週）':'');
 }
-function goRank(){ rankWeek=rankWeekKey(new Date()); rankEditing=false; showView('viewRank'); renderRank(); }
+
+// ── 我的名次：本機存一份（離線也能用），登入雲端後同步 ──
+function loadMyRanksLocal(){ try{ const o=JSON.parse(localStorage.getItem('nr3_myranks')||'null'); if(o&&o.weeks) myRanks=o; }catch(e){} }
+function saveMyRanksLocal(){ try{ localStorage.setItem('nr3_myranks',JSON.stringify(myRanks)); }catch(e){} }
+function rankMeInfo(){
+  if(typeof readerProfile!=='undefined' && readerProfile) return readerProfile;
+  return {uid:(fbUser&&fbUser.uid)||'me', name:(APP_MODE==='admin'||(typeof isOwnerSession==='function'&&isOwnerSession()))?'管理者':'我', color:'#b5860d'};
+}
+// 以前排名是管理者手動設在每本書上（n.rankHistory）。第一次打開新版排行榜時，把它轉成「管理者自己的名次」。
+function migrateLegacyRanks(){
+  if(localStorage.getItem('nr3_myranks_migrated')) return;
+  const owner=(APP_MODE==='admin')||(typeof isOwnerSession==='function'&&isOwnerSession());
+  if(owner){
+    let any=false;
+    novels.forEach(n=>{
+      const h=n.rankHistory; if(!h||typeof h!=='object') return;
+      Object.keys(h).forEach(wk=>{
+        const v=h[wk]; if(typeof v!=='number'||v<1) return;
+        if(!myRanks.weeks[wk]) myRanks.weeks[wk]={};
+        if(myRanks.weeks[wk][n.id]===undefined){ myRanks.weeks[wk][n.id]=v; any=true; }
+      });
+    });
+    if(any){ myRanks.updatedAt=Date.now(); saveMyRanksLocal(); }
+  }
+  localStorage.setItem('nr3_myranks_migrated','1');
+}
+function ranksCloudReady(){ return !!(fbUser && fsProjectId && typeof cloudOwnerUid==='function' && cloudOwnerUid()); }
+async function uploadMyRanks(){
+  if(!ranksCloudReady()) return false;
+  const me=rankMeInfo();
+  await fsRestSet(`users/${cloudOwnerUid()}/ranks/${fbUser.uid}`,{uid:fbUser.uid, name:me.name, color:me.color, weeks:myRanks.weeks, updatedAt:myRanks.updatedAt||Date.now()});
+  return true;
+}
+async function loadMyRanksCloud(){ // 本機和雲端各一份，取比較新的
+  if(!ranksCloudReady()) return;
+  try{
+    const d=await fsRestGet(`users/${cloudOwnerUid()}/ranks/${fbUser.uid}`);
+    if(d){
+      const c=fromFsDoc(d);
+      if((c.updatedAt||0)>(myRanks.updatedAt||0) && c.weeks){ myRanks={weeks:c.weeks, updatedAt:c.updatedAt||0}; saveMyRanksLocal(); }
+      else if((myRanks.updatedAt||0)>(c.updatedAt||0)) await uploadMyRanks();
+    } else if(Object.keys(myRanks.weeks).length) await uploadMyRanks();
+  }catch(e){ console.warn('名次同步失敗', e); }
+}
+async function fetchAllRanks(){
+  if(!ranksCloudReady()){ allRanks=null; return; }
+  try{
+    const docs=await fsListAllPaged(`users/${cloudOwnerUid()}/ranks`, []);
+    allRanks=docs.map(d=>fromFsDoc(d)).filter(u=>u && u.uid && u.weeks);
+  }catch(e){ console.warn('讀取大家的排名失敗', e); }
+}
+function allRankUsers(){ // 其他人（雲端）＋我自己（用本機最新的，就算還沒上傳也算進去）
+  const meUid=(fbUser&&fbUser.uid)||'me', me=rankMeInfo();
+  const users=(allRanks||[]).filter(u=>u.uid!==meUid);
+  users.push({uid:meUid, name:me.name, color:me.color, weeks:myRanks.weeks});
+  return users;
+}
+
+// ── 查詢：個人／綜合 ──
+function myRankOf(n,week){ const w=myRanks.weeks[week]; const v=w&&w[n.id]; return (typeof v==='number'&&v>=1)?v:null; }
+function myPrevOf(n,week){
+  const keys=Object.keys(myRanks.weeks).filter(k=>k<week && myRankOf(n,k)!==null).sort();
+  const last=keys.pop(); return last?{week:last, rank:myRankOf(n,last)}:null;
+}
+// 某一週的綜合排名：novelId → {rank, avg, count, list}
+function aggRanks(week){
+  const m=new Map();
+  allRankUsers().forEach(u=>{
+    const w=u.weeks&&u.weeks[week]; if(!w) return;
+    Object.keys(w).forEach(nid=>{
+      const v=w[nid]; if(typeof v!=='number'||v<1) return;
+      if(!m.has(nid)) m.set(nid,{id:nid,sum:0,count:0,list:[]});
+      const e=m.get(nid); e.sum+=v; e.count++; e.list.push({name:u.name,color:u.color,rank:v});
+    });
+  });
+  const arr=[...m.values()]; arr.forEach(e=>{ e.avg=e.sum/e.count; e.avgR=Math.round(e.avg*100)/100; });
+  arr.sort((a,b)=>a.avgR-b.avgR);
+  const out=new Map();
+  arr.forEach(e=>{ e.rank=1+arr.filter(x=>x.avgR<e.avgR).length; out.set(e.id,e); }); // 平均一樣＝並列
+  return out;
+}
+function aggPrevOf(nid,week){
+  const weeks=new Set(); allRankUsers().forEach(u=>Object.keys(u.weeks||{}).forEach(k=>{ if(k<week) weeks.add(k); }));
+  for(const wk of [...weeks].sort().reverse()){ const e=aggRanks(wk).get(nid); if(e) return {week:wk, rank:e.rank}; }
+  return null;
+}
+
+function goRank(){
+  rankWeek=rankWeekKey(new Date()); rankEditing=false;
+  showView('viewRank');
+  loadMyRanksLocal(); migrateLegacyRanks();
+  renderRank();
+  refreshRanks(true);
+}
+async function refreshRanks(silent){
+  if(!ranksCloudReady()){ if(!silent) showToast('登入雲端後才能同步排名'); return; }
+  try{
+    if(typeof readerProfile!=='undefined' && !readerProfile && typeof loadReaderProfile==='function') await loadReaderProfile();
+    await loadMyRanksCloud();
+    await fetchAllRanks();
+    if(document.getElementById('viewRank').classList.contains('active')) renderRank();
+    if(!silent) showToast('✅ 已更新大家的排名');
+  }catch(e){ if(!silent) showToast('更新失敗：'+e.message,5000); }
+}
+function setRankMode(m){ rankMode=m; rankEditing=false; renderRank(); }
 function rankGoWeek(delta){ rankWeek=rankShiftWeek(rankWeek,delta); rankEditing=false; renderRank(); }
 function rankGoThisWeek(){ rankWeek=rankWeekKey(new Date()); rankEditing=false; renderRank(); }
 function toggleRankEdit(){ rankEditing=!rankEditing; renderRank(); }
 
-function rankPrevOf(n, weekKey){
-  const keys=Object.keys(n.rankHistory||{}).filter(k=>k<weekKey).sort();
-  const last=keys.pop();
-  return last ? {week:last, rank:n.rankHistory[last]} : null;
-}
-function rankTrendBadge(n, rank){
-  const prev=rankPrevOf(n, rankWeek);
+function rankTrendBadge(prev, rank, tipLabel){
   const b=document.createElement('span');
   if(!prev){ b.className='trend new'; b.textContent='NEW'; return b; }
   const diff=prev.rank-rank;
@@ -4131,7 +4235,7 @@ function rankTrendBadge(n, rank){
   else if(diff<0){ b.className='trend down'; b.textContent='▼ '+(-diff); }
   else { b.className='trend same'; b.textContent='－'; }
   const pd=rankKeyToDate(prev.week);
-  b.title=`對比 ${pd.getMonth()+1}/${pd.getDate()} 那週的第 ${prev.rank} 名`;
+  b.title=`對比 ${pd.getMonth()+1}/${pd.getDate()} 那週的${tipLabel||''}第 ${prev.rank} 名`;
   return b;
 }
 function rankCoverEl(n){
@@ -4144,37 +4248,77 @@ function rankCoverEl(n){
 
 function renderRank(){
   document.getElementById('rankWeekLabel').textContent=rankWeekLabel(rankWeek);
-  document.getElementById('rankEditBtn').textContent=rankEditing?'✕ 取消編輯':'✏ 編輯名次';
+  const editBtn=document.getElementById('rankEditBtn');
+  editBtn.style.display = rankMode==='mine' ? '' : 'none';
+  editBtn.textContent=rankEditing?'✕ 取消編輯':'✏ 編輯我的名次';
+  const modeRow=document.getElementById('rankModeRow');
+  if(modeRow){
+    modeRow.innerHTML='';
+    [['mine','👤 我的排名'],['all','👥 綜合排名']].forEach(([k,label])=>{
+      const b=document.createElement('button'); b.type='button';
+      b.className='theme-btn'+(rankMode===k?' active':''); b.textContent=label; b.onclick=()=>setRankMode(k);
+      modeRow.appendChild(b);
+    });
+    const rf=document.createElement('button'); rf.type='button'; rf.className='btn-ghost btn-sm'; rf.textContent='🔄 更新'; rf.title='重新讀取大家的排名'; rf.onclick=()=>refreshRanks(false);
+    modeRow.appendChild(rf);
+  }
   const body=document.getElementById('rankBody');
   body.innerHTML='';
   if(!novels.length){
-    body.innerHTML='<div style="text-align:center;color:var(--ink-3);padding:40px 0;font-size:14px">書架還是空的，先新增小說再來排名吧</div>';
+    body.innerHTML='<div style="text-align:center;color:var(--ink-3);padding:40px 0;font-size:14px">書架還是空的</div>';
     return;
   }
-  if(rankEditing){ renderRankEditor(body); return; }
+  if(rankMode==='mine' && rankEditing){ renderRankEditor(body); return; }
 
-  const groups=new Map(); // rank -> [novel index]
-  novels.forEach((n,i)=>{
-    const r=(n.rankHistory||{})[rankWeek];
-    if(typeof r==='number' && r>=1){ if(!groups.has(r)) groups.set(r,[]); groups.get(r).push(i); }
-  });
-  if(!groups.size){
-    body.innerHTML='<div style="text-align:center;color:var(--ink-3);padding:40px 16px;font-size:14px;line-height:1.8">這週還沒有排名<br>點右上角「✏ 編輯名次」開始設定</div>';
+  // 整理成 [{ni, rank, prev, extra}]
+  const entries=[];
+  if(rankMode==='mine'){
+    novels.forEach((n,i)=>{ const r=myRankOf(n,rankWeek); if(r!==null) entries.push({ni:i, rank:r, prev:myPrevOf(n,rankWeek)}); });
+  } else {
+    const agg=aggRanks(rankWeek);
+    novels.forEach((n,i)=>{ const e=agg.get(n.id); if(e) entries.push({ni:i, rank:e.rank, prev:aggPrevOf(n.id,rankWeek), extra:e}); });
+  }
+  if(!entries.length){
+    const msg = rankMode==='mine'
+      ? '這週你還沒有設定名次<br>點右上角「✏ 編輯我的名次」開始'
+      : (ranksCloudReady() ? '這週還沒有人設定名次' : '登入雲端後才能看到大家的排名<br>（目前只算你自己的）');
+    body.innerHTML='<div style="text-align:center;color:var(--ink-3);padding:40px 16px;font-size:14px;line-height:1.8">'+msg+'</div>';
     return;
   }
+  if(rankMode==='all'){
+    const note=document.createElement('div');
+    note.style.cssText='font-size:12px;color:var(--ink-3);line-height:1.7;margin-bottom:4px';
+    const users=allRankUsers().filter(u=>u.weeks&&u.weeks[rankWeek]&&Object.keys(u.weeks[rankWeek]).length).length;
+    note.textContent=`這週共 ${users} 人有排名。綜合名次＝每個人給的名次取平均，平均越小越前面（只算有排到那本書的人）。`;
+    body.appendChild(note);
+  }
+  const groups=new Map();
+  entries.forEach(e=>{ if(!groups.has(e.rank)) groups.set(e.rank,[]); groups.get(e.rank).push(e); });
   [...groups.keys()].sort((a,b)=>a-b).forEach(rank=>{
     const row=document.createElement('div'); row.className='rank-row';
     const num=document.createElement('div');
     num.className='rank-num'+(rank<=3?' r'+rank:'');
     num.textContent=rank;
     const wrap=document.createElement('div'); wrap.className='rank-books';
-    groups.get(rank).forEach(i=>{
-      const n=novels[i];
+    groups.get(rank).forEach(e=>{
+      const n=novels[e.ni];
       const card=document.createElement('div'); card.className='rank-card';
-      card.onclick=()=>showDetail(i);
+      card.onclick=()=>showDetail(e.ni);
       const info=document.createElement('div'); info.style.minWidth='0';
       const t=document.createElement('div'); t.className='rank-title'; t.textContent=n.name||'未命名';
-      info.appendChild(t); info.appendChild(rankTrendBadge(n, rank));
+      info.appendChild(t); info.appendChild(rankTrendBadge(e.prev, rank, rankMode==='all'?'綜合':''));
+      if(e.extra){
+        const avg=document.createElement('div'); avg.style.cssText='font-size:11px;color:var(--ink-3);margin-top:3px';
+        avg.textContent=`平均 ${e.extra.avgR}（${e.extra.count} 人）`;
+        info.appendChild(avg);
+        const chips=document.createElement('div'); chips.style.cssText='display:flex;gap:4px;flex-wrap:wrap;margin-top:3px';
+        e.extra.list.forEach(x=>{
+          const c=document.createElement('span');
+          c.style.cssText=`font-size:10px;padding:1px 6px;border-radius:8px;color:#fff;background:${x.color||'#888'}`;
+          c.textContent=`${x.name} ${x.rank}`; chips.appendChild(c);
+        });
+        info.appendChild(chips);
+      }
       card.appendChild(rankCoverEl(n)); card.appendChild(info);
       wrap.appendChild(card);
     });
@@ -4186,14 +4330,11 @@ function renderRank(){
 function renderRankEditor(body){
   const tip=document.createElement('div');
   tip.style.cssText='font-size:13px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:10px 12px;border-radius:var(--radius);margin-bottom:8px';
-  tip.textContent='填入這週的名次數字。數字相同就是並列（會並排顯示在同一列）；留空代表這週沒上榜。';
+  tip.textContent='這是「你自己」的名次：填數字就是這週的名次，數字相同就是並列，留空代表這週沒排。其他人看得到你的名次，也會一起算進綜合排名。';
   body.appendChild(tip);
-
-  // 已有名次的排前面，其餘照書架順序
   const order=novels.map((n,i)=>i).sort((a,b)=>{
-    const ra=(novels[a].rankHistory||{})[rankWeek], rb=(novels[b].rankHistory||{})[rankWeek];
-    const va=typeof ra==='number'?ra:1e9, vb=typeof rb==='number'?rb:1e9;
-    return va-vb || a-b;
+    const ra=myRankOf(novels[a],rankWeek), rb=myRankOf(novels[b],rankWeek);
+    return (ra===null?1e9:ra)-(rb===null?1e9:rb) || a-b;
   });
   order.forEach(i=>{
     const n=novels[i];
@@ -4203,23 +4344,19 @@ function renderRankEditor(body){
     const inp=document.createElement('input');
     inp.type='number'; inp.min='1'; inp.step='1'; inp.className='pinput'; inp.placeholder='—';
     inp.dataset.idx=i;
-    const cur=(n.rankHistory||{})[rankWeek];
-    if(typeof cur==='number') inp.value=cur;
+    const cur=myRankOf(n,rankWeek); if(cur!==null) inp.value=cur;
     row.appendChild(name); row.appendChild(inp);
     body.appendChild(row);
   });
-
   const bar=document.createElement('div');
   bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap';
   const copyBtn=document.createElement('button'); copyBtn.className='btn-g btn-sm'; copyBtn.textContent='⤵ 從上一次帶入';
   copyBtn.onclick=()=>{
-    // 找所有書裡「比這週更早、最近一次有排名的那週」，把名次填進輸入框（還沒儲存）
-    let best=null;
-    novels.forEach(n=>Object.keys(n.rankHistory||{}).forEach(k=>{ if(k<rankWeek && (!best||k>best)) best=k; }));
-    if(!best){ showToast('之前還沒有任何排名可以帶入'); return; }
+    const best=Object.keys(myRanks.weeks).filter(k=>k<rankWeek).sort().pop();
+    if(!best){ showToast('之前還沒有任何名次可以帶入'); return; }
     body.querySelectorAll('input[data-idx]').forEach(inp=>{
-      const r=(novels[inp.dataset.idx].rankHistory||{})[best];
-      inp.value=typeof r==='number'?r:'';
+      const v=(myRanks.weeks[best]||{})[novels[inp.dataset.idx].id];
+      inp.value=typeof v==='number'?v:'';
     });
     const d=rankKeyToDate(best);
     showToast(`已帶入 ${d.getMonth()+1}/${d.getDate()} 那週的名次，記得按儲存`);
@@ -4232,22 +4369,29 @@ function renderRankEditor(body){
   body.appendChild(bar);
 }
 
-function saveRankEdits(){
+async function saveRankEdits(){
+  const week={};
   document.querySelectorAll('#rankBody input[data-idx]').forEach(inp=>{
     const n=novels[inp.dataset.idx]; if(!n) return;
     const v=parseInt(inp.value,10);
-    if(!n.rankHistory) n.rankHistory={};
-    if(Number.isInteger(v) && v>=1) n.rankHistory[rankWeek]=v;
-    else delete n.rankHistory[rankWeek];
-    if(!Object.keys(n.rankHistory).length) delete n.rankHistory;
+    if(Number.isInteger(v) && v>=1) week[n.id]=v;
   });
-  persist();
-  if(typeof triggerCloudSyncAfterEdit==='function') triggerCloudSyncAfterEdit();
+  if(Object.keys(week).length) myRanks.weeks[rankWeek]=week; else delete myRanks.weeks[rankWeek];
+  myRanks.updatedAt=Date.now();
+  saveMyRanksLocal();
   rankEditing=false;
   renderRank();
-  showToast('✅ 本週名次已儲存');
+  if(!ranksCloudReady()){ showToast('✅ 已存在這台裝置（登入雲端後才會同步給大家）',5000); return; }
+  try{
+    await uploadMyRanks();
+    await fetchAllRanks();
+    if(document.getElementById('viewRank').classList.contains('active')) renderRank();
+    showToast('✅ 名次已儲存並上傳');
+  }catch(e){
+    console.error(e);
+    showToast('已存在這台裝置，但上傳失敗：'+e.message+(/權限/.test(e.message)?'（請管理者更新 Firestore 安全規則）':''),7000);
+  }
 }
-
 
 // ══ 資料夾匯入：整個資料夾 → 一本書 ══
 // 資料夾名稱＝書名；資料夾裡（含子資料夾）每個 .txt＝一章，標題用檔名，照檔名的
@@ -5094,6 +5238,11 @@ service cloud.firestore {
     match /users/{ownerId}/reports/{reportId} {
       allow create: if ownerId == '${owner}' && isMember() && request.resource.data.uid == request.auth.uid;
       allow read: if ownerId == '${owner}' && isMember() && resource.data.uid == request.auth.uid;
+    }
+    // 排名：所有成員都看得到彼此的名次（才算得出綜合排名）；只能修改自己的
+    match /users/{ownerId}/ranks/{rankUid} {
+      allow read: if ownerId == '${owner}' && isMember();
+      allow write: if ownerId == '${owner}' && isMember() && request.auth.uid == rankUid;
     }
     // 每位讀者自己的資料（畫線、進度、書籤）：只有本人讀寫，其他人（包含其他讀者）看不到
     match /users/{ownerId}/readers/{readerId}/{document=**} {
