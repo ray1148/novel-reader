@@ -1324,7 +1324,7 @@ const APP_MODE = (()=>{
   let seg=''; try{ seg=decodeURIComponent(location.pathname.replace(/\/+$/,'').split('/').pop()||''); }catch(e){ seg=location.pathname; }
   return /^admin(?![a-z0-9])/i.test(seg) ? 'admin' : 'front';
 })();
-const BUILD_ID='2026-11-24.7'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
+const BUILD_ID='2026-11-24.8'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
 document.body.classList.add('mode-'+APP_MODE); // 前台隱藏 .admin-only 的管理功能（見 CSS）
 (function modeStamp(){
   const d=document.createElement('div');
@@ -5134,6 +5134,25 @@ async function syncLibraryFromCloud(){
       }
       L._contentRev=m.contentRev;
       invalidateChapterOrder(L);
+    } else if(Array.isArray(m.chapterOrder) && m.chapterOrder.length){
+      // 舊版後台上傳的書（還沒有「章節目錄」）：改用章節清單的 id，並向雲端問一次每章的標題。
+      // 只有這本書在這台裝置上的章節數跟雲端清單不一致時才會問（第一次或管理者新增/刪除章節後），
+      // 平常重新打開不會再讀。管理者用新版後台備份過一次後，就會改走章節目錄，不再需要這樣。
+      needRepublish=true;
+      if(L.chapters.length!==m.chapterOrder.length){
+        const docs=await fsListAllPaged(`users/${owner}/novels/n_${nid}/chapters`, ['title','isExtra']);
+        const info=new Map();
+        docs.forEach(d=>{ const last=d.name.split('/').pop(); if(last.startsWith('c_')){ const f=d.fields||{}; info.set(last.slice(2),{t:f.title&&f.title.stringValue||'', x:f.isExtra&&('booleanValue' in f.isExtra)?f.isExtra.booleanValue:undefined}); } });
+        const have=new Map(L.chapters.map(c=>[c.id,c]));
+        L.chapters=m.chapterOrder.filter(id=>info.has(id)).map(id=>{
+          const c=have.get(id)||{id, title:'', content:null};
+          c.title=info.get(id).t;
+          if(info.get(id).x===true||info.get(id).x===false) c.isExtra=info.get(id).x; else delete c.isExtra;
+          c._rh=''; // 舊版沒有內容指紋，之後管理者改了內容，這邊偵測不到，要等新版備份後才會自動更新
+          return c;
+        });
+        invalidateChapterOrder(L);
+      }
     } else { needRepublish=true; }
     // 封面
     if(m.coverHash){
