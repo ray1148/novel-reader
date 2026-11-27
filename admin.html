@@ -296,6 +296,8 @@ body.mode-admin .front-only{display:none!important}
 /* 後台一眼就能分辨：最上方一條金色粗線、導覽列換成深色底、角落標明模式與版本 */
 body.mode-admin{border-top:5px solid var(--gold)}
 body.mode-admin .admin-bar{background:#2a2010;border-bottom:2px solid var(--gold)}
+body.mode-admin #btnSettings{display:none} /* 後台的設定入口在導覽列「⚙ 系統設定」，避免出現兩個設定 */
+.sec-chip{white-space:nowrap}
 body.mode-admin .admin-bar .btn-g,body.mode-admin .admin-bar .btn-ghost{color:#f0e0b0}
 .admin-tag{font-size:13px;font-weight:700;color:var(--gold);white-space:nowrap;margin-right:4px}
 #modeStamp{position:fixed;right:8px;bottom:6px;font-size:10px;color:var(--ink-3);opacity:.7;z-index:60;pointer-events:none;background:var(--paper);padding:1px 6px;border-radius:8px;border:1px solid var(--paper-3)}
@@ -825,8 +827,9 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <button class="btn-g btn-sm" onclick="goFront()">📖 回前台</button>
     </div>
     <div style="font-size:12px;color:var(--ink-3);line-height:1.7">雲端同步、AI 服務、資料管理放在這裡。後台負責新增上傳、編輯與管理書籍；前台只做閱讀、畫線、留言、排行和問題回報。前台和後台共用同一份書架資料，在後台還原或清除資料後，前台會提示重新整理。</div>
+    <div id="adminSecTabs" style="display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:5;background:var(--paper);padding:6px 0"></div>
 
-    <div class="settings-section">
+    <div class="settings-section" data-sec="cloud">
       <div class="settings-title">☁ 雲端帳號同步</div>
       <div style="font-size:13px;color:var(--ink-2);line-height:1.7;background:var(--paper-2);padding:12px;border-radius:var(--radius)">
         使用 <strong>Google Firebase Firestore</strong>（免費方案完全夠用）同步資料，換手機也可以繼續閱讀。
@@ -862,7 +865,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <div style="font-size:12px;color:var(--ink-3)" id="fbStatus"></div>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" data-sec="ai">
       <div class="settings-title">AI 服務</div>
       <div class="msection">
         <label style="font-size:13px;color:var(--ink-2);font-weight:600">選擇 AI 服務</label>
@@ -926,7 +929,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       </div>
     </div>
 
-    <div class="settings-section" id="readerAdminSection">
+    <div class="settings-section" id="readerAdminSection" data-sec="readers">
       <div class="settings-title">👥 讀者管理（朋友帳號）</div>
       <div style="font-size:12px;color:var(--ink-3);line-height:1.8">
         讓朋友用「自己的帳號」讀你發布到雲端的書。步驟：<br>
@@ -948,7 +951,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <button class="btn-g btn-sm" onclick="copyRules()" style="align-self:flex-start">📋 複製規則</button>
     </div>
 
-    <div class="settings-section" id="auditSection">
+    <div class="settings-section" id="auditSection" data-sec="audit">
       <div class="settings-title">☁ 雲端內容校對</div>
       <div style="font-size:12px;color:var(--ink-3);line-height:1.8">
         把「本機的書」和「雲端實際存的章節」一章一章比對，找出三種問題：<br>
@@ -958,7 +961,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
       <div id="auditList"></div>
     </div>
 
-    <div class="settings-section">
+    <div class="settings-section" data-sec="data">
       <div class="settings-title">資料管理</div>
       <div style="font-size:13px;color:var(--ink-2)">目前儲存 <strong id="storageNovelCount">0</strong> 本小說，<strong id="storageSize">—</strong></div>
       <div style="font-size:12px;color:var(--ink-3);margin-top:4px" id="storageRemain">—</div>
@@ -1281,7 +1284,7 @@ mark[data-has-note]::after{content:"💬";font-size:.62em;margin-left:1px;vertic
 <div class="confirm-card" id="confirmCard">
   <div class="confirm-card-msg" id="confirmMsg"></div>
   <div class="confirm-card-btns">
-    <button class="btn-g btn-sm" id="confirmCancel" onclick="hideConfirm()">取消</button>
+    <button class="btn-g btn-sm" id="confirmCancel" onclick="hideConfirm(true)">取消</button>
     <button class="btn-d" id="confirmOk" onclick="const _cb=confirmCallback;hideConfirm();if(_cb)_cb();">確定刪除</button>
   </div>
 </div>
@@ -1324,7 +1327,7 @@ const APP_MODE = (()=>{
   let seg=''; try{ seg=decodeURIComponent(location.pathname.replace(/\/+$/,'').split('/').pop()||''); }catch(e){ seg=location.pathname; }
   return /^admin(?![a-z0-9])/i.test(seg) ? 'admin' : 'front';
 })();
-const BUILD_ID='2026-11-24.8'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
+const BUILD_ID='2026-11-24.9'; // 每次改版會變；畫面右下角會顯示，用來確認瀏覽器載入的是不是最新版
 document.body.classList.add('mode-'+APP_MODE); // 前台隱藏 .admin-only 的管理功能（見 CSS）
 (function modeStamp(){
   const d=document.createElement('div');
@@ -5419,6 +5422,24 @@ async function auditForceReaders(ni){
   if(ok) showToast('✅ 已通知朋友的前台：這本書下次打開會重新下載章節');
 }
 
+
+// 後台「系統設定」分成幾個小分頁（雲端／AI／讀者／校對／資料），一次只顯示一組，不用一直往下捲
+const ADMIN_SECS=[['cloud','☁ 雲端'],['ai','🤖 AI'],['readers','👥 讀者'],['audit','🔍 校對'],['data','🗄 資料']];
+function showAdminSec(k){
+  try{ sessionStorage.setItem('nr3_adm_sec',k); }catch(e){}
+  document.querySelectorAll('#viewAdmin .settings-section[data-sec]').forEach(sec=>{ sec.style.display=(sec.dataset.sec===k)?'':'none'; });
+  const tabs=document.getElementById('adminSecTabs'); if(!tabs) return;
+  tabs.innerHTML='';
+  ADMIN_SECS.forEach(([key,label])=>{
+    const b=document.createElement('button'); b.type='button'; b.className='theme-btn sec-chip'+(key===k?' active':''); b.textContent=label;
+    b.onclick=()=>showAdminSec(key); tabs.appendChild(b);
+  });
+  const rd=document.createElement('button'); rd.type='button'; rd.className='btn-ghost btn-sm sec-chip'; rd.textContent='📖 閱讀設定 ›'; rd.title='字體大小、主題、閱讀時間統計'; rd.onclick=()=>goSettings();
+  tabs.appendChild(rd);
+  if(k==='readers'){ try{ renderReaderAdmin(); }catch(e){} }
+  if(k==='audit'){ try{ renderAudit(); }catch(e){} }
+}
+
 // ══ Novel tags ══
 const PRESET_TAGS=["冒險","動作","奇幻","科幻","懸疑","恐怖","愛情","校園","日常","搞笑","戰爭","武俠","都市","穿越","治癒","悲劇","歷史","靈異"];
 let tagState={add:[],edit:[]};
@@ -7019,6 +7040,33 @@ async function fbBackup(auto){
 
     // 2. 只上傳/刪除真正變動的部分（最多同時 6 筆並行，加快大量章節時的速度）
     let done=0;
+    // 刪除只在「手動備份」時執行，而且要先讓你確認。
+    // 以前刪掉一本書或一章之後，幾秒內自動同步就會把雲端那份也永久刪掉（朋友的前台也跟著看不到），
+    // 沒有任何確認，刪錯了就再也找不回來。現在自動同步會略過刪除（紀錄保留著，不會消失），
+    // 要手動按「備份」才會真的刪，而且會先跳出確認。
+    {
+      const delTasks=tasks.filter(t=>t.type==='deleteNovel'||t.type==='deleteChapter');
+      if(delTasks.length){
+        let proceed=false;
+        if(!auto){
+          const novelDel=delTasks.filter(t=>t.type==='deleteNovel'), chapDel=delTasks.filter(t=>t.type==='deleteChapter');
+          const names=[];
+          for(const t of novelDel.slice(0,5)){
+            try{ const d=await fsRestGet(`users/${uid}/novels/n_${t.id}`); names.push('《'+((d&&fromFsDoc(d).name)||t.id)+'》'); }catch(e){ names.push('（未知的書）'); }
+          }
+          const parts=[];
+          if(novelDel.length) parts.push(`${novelDel.length} 本書：${names.join('')}${novelDel.length>5?'…':''}`);
+          if(chapDel.length) parts.push(`${chapDel.length} 個章節`);
+          overlay.style.display='none';
+          proceed=await new Promise(res=>showConfirm(`這次備份會從雲端「永久刪除」${parts.join('，以及')}。朋友的前台也會跟著看不到，刪掉就找不回來。要刪除嗎？\n（選取消：不刪除，其他內容照常備份；刪除紀錄會保留，之後備份還會再問。要救回請用「從雲端還原」。）`,()=>res(true),()=>res(false),'確定刪除'));
+          overlay.style.display='flex';
+        }
+        if(!proceed){
+          for(let i=tasks.length-1;i>=0;i--) if(delTasks.includes(tasks[i])) tasks.splice(i,1);
+          if(!auto) showToast('已略過刪除，其餘內容繼續備份',4000);
+        }
+      }
+    }
     const total=tasks.length;
     const coverSyncFailed=[]; // 收集封面圖片同步失敗的小說名稱，最後統一提示，不中斷其他同步
     const inlineImgSyncFailed=[]; // 收集內嵌圖片同步失敗的章節標題
@@ -7031,6 +7079,8 @@ async function fbBackup(auto){
         // 這本確定刪除成功了，才從待刪除清單移除；沒成功的話保留，下次同步繼續重試
         const idx = stillPendingDelete.indexOf(t.id);
         if(idx>=0) stillPendingDelete.splice(idx,1);
+        // 這本書整個刪掉了，它底下章節的「待刪除」紀錄也一起清掉（不然會永遠留著）
+        for(let i=stillPendingChapterDelete.length-1;i>=0;i--) if(stillPendingChapterDelete[i].startsWith(t.id+'::')) stillPendingChapterDelete.splice(i,1);
       } else if(t.type==='novelMeta'){
         const n=novels.find(x=>x.id===t.id);
         const localChapterOrder  = n.chapters.map(c=>c.id);
@@ -7616,6 +7666,15 @@ async function _doRestore(){
     setTimeout(()=>{ overlay.style.display='none'; }, 1200);
     setFbStatus('✅ 還原成功！備份時間：' + ts);
     showToast(dedupedTotal ? `✅ 還原成功！已自動清掉 ${dedupedTotal} 個重複章節` : '✅ 還原成功！');
+    // 還原回來的書／章節，要把「待刪除」紀錄清掉，不然下次備份又會把剛還原的東西從雲端刪掉
+    try{
+      const ids=new Set(novels.map(n=>n.id));
+      const dn=JSON.parse(localStorage.getItem('nr3_deleted_novels')||'[]').filter(id=>!ids.has(id));
+      localStorage.setItem('nr3_deleted_novels',JSON.stringify(dn));
+      const have=new Set(); novels.forEach(n=>n.chapters.forEach(c=>have.add(n.id+'::'+c.id)));
+      const dc=JSON.parse(localStorage.getItem('nr3_deleted_chapters')||'[]').filter(k=>!have.has(k));
+      localStorage.setItem('nr3_deleted_chapters',JSON.stringify(dc));
+    }catch(e){}
     nrBroadcast('data-changed'); // 還原後，還開著的前台要重新整理
     if(dedupedTotal) triggerCloudSyncAfterEdit(); // 順便清理雲端那份殘留
     renderShelf();
@@ -7820,15 +7879,18 @@ function rebuildAllRagIndex(){
 
 
 // ══ Inline Confirm ══
-let confirmCallback = null;
-function showConfirm(msg, onOk){
-  confirmCallback = onOk;
+let confirmCallback = null, confirmCancelCb = null;
+function showConfirm(msg, onOk, onCancel, okLabel){
+  confirmCallback = onOk; confirmCancelCb = onCancel||null;
   document.getElementById('confirmMsg').textContent = msg;
+  document.getElementById('confirmOk').textContent = okLabel || '確定刪除';
   document.getElementById('confirmCard').classList.add('show');
 }
-function hideConfirm(){
+function hideConfirm(cancelled){
   document.getElementById('confirmCard').classList.remove('show');
+  const cb = confirmCancelCb; confirmCancelCb = null;
   confirmCallback = null;
+  if(cancelled===true && cb) cb();
 }
 // confirmOk/Cancel bound in init() to guarantee DOM is ready
 
@@ -8346,6 +8408,7 @@ async function init(){
     showView('viewShelf'); // 後台從「書籍管理」開始，並顯示導覽列
     try{renderReaderAdmin();}catch(e){console.error(e);}
     try{renderAudit();}catch(e){console.error(e);}
+    try{ showAdminSec((function(){ try{return sessionStorage.getItem('nr3_adm_sec');}catch(e){return null;} })()||'cloud'); }catch(e){console.error(e);}
   } else {
     readerBoot(); // 前台：登入 → 從雲端讀書庫
   }
